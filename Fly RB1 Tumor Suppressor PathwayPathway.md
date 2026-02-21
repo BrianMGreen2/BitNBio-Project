@@ -1,4 +1,4 @@
-Great question. The short answer is: **the core logic is essentially identical**, but there are some important simplifications and differences in the fly version.
+Fly RB1 Tumor Suppressor Pathway
 
 ---
 
