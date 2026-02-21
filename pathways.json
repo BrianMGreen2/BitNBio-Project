@@ -1,0 +1,302 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "project": "Who Gives a Fly",
+    "description": "Cross-species pathway comparison database for translational medicine",
+    "species": {
+      "drosophila": {
+        "common_name": "Fruit fly",
+        "latin_name": "Drosophila melanogaster",
+        "abbreviation": "Dmel",
+        "genome_db": "FlyBase",
+        "taxon_id": 7227
+      },
+      "mouse": {
+        "common_name": "Mouse",
+        "latin_name": "Mus musculus",
+        "abbreviation": "Mmus",
+        "genome_db": "MGI",
+        "taxon_id": 10090
+      },
+      "human": {
+        "common_name": "Human",
+        "latin_name": "Homo sapiens",
+        "abbreviation": "Hsap",
+        "genome_db": "HGNC",
+        "taxon_id": 9606
+      },
+      "zebrafish": {
+        "common_name": "Zebrafish",
+        "latin_name": "Danio rerio",
+        "abbreviation": "Drer",
+        "genome_db": "ZFIN",
+        "taxon_id": 7955
+      },
+      "worm": {
+        "common_name": "Nematode",
+        "latin_name": "Caenorhabditis elegans",
+        "abbreviation": "Cele",
+        "genome_db": "WormBase",
+        "taxon_id": 6239
+      }
+    }
+  },
+
+  "pathways": [
+    {
+      "id": "rb_pathway",
+      "name": "Retinoblastoma (Rb) Tumor Suppressor Pathway",
+      "description": "Controls G1/S cell cycle transition. Dysregulated in virtually all human cancers.",
+      "disease_relevance": "Retinoblastoma, osteosarcoma, SCLC, breast cancer, bladder cancer",
+      "omim": "180200",
+      "kegg": "hsa04110",
+      "tags": ["cell_cycle", "tumor_suppressor", "cancer", "G1_S_checkpoint"],
+
+      "components": [
+        {
+          "id": "rb1",
+          "role": "Pocket protein / tumor suppressor",
+          "function": "Binds and represses E2F transcription factors. Core brake on cell cycle entry.",
+          "is_core": true,
+          "orthologs": {
+            "human":      { "symbol": "RB1",   "full_name": "Retinoblastoma protein",        "paralogs": ["RBL1","RBL2"], "disease": "Retinoblastoma, osteosarcoma", "omim": "614041" },
+            "mouse":      { "symbol": "Rb1",   "full_name": "Retinoblastoma protein",        "paralogs": ["Rbl1","Rbl2"], "note": "KO lethal E14.5; het → pituitary tumours" },
+            "drosophila": { "symbol": "RBF1",  "full_name": "Retinoblastoma family protein 1","paralogs": ["RBF2"],        "note": "Primary fly homolog; loss → ectopic S-phase + apoptosis" },
+            "zebrafish":  { "symbol": "rb1",   "full_name": "Retinoblastoma protein",        "paralogs": [],             "note": "KO viable; tumour prone" },
+            "worm":       { "symbol": "lin-35","full_name": "Retinoblastoma homolog",         "paralogs": [],             "note": "Single homolog; controls vulval development" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.97, "level": "very_high", "notes": "97% protein identity; functionally interchangeable in most contexts" },
+            "human_zebrafish":  { "score": 0.82, "level": "high",      "notes": "82% identity; conserved pocket domain" },
+            "human_drosophila": { "score": 0.52, "level": "moderate",  "notes": "Pocket domain conserved; overall 52% identity; 2 fly paralogs vs 3 human" },
+            "human_worm":       { "score": 0.31, "level": "low",       "notes": "Single C. elegans homolog; pocket domain recognisable but diverged" }
+          },
+          "translational_risk": "low",
+          "translational_notes": "Core pocket domain highly conserved. Mouse models predictive. Fly models valid for pathway logic but paralog number differs."
+        },
+
+        {
+          "id": "cdk4_6",
+          "role": "Serine/threonine kinase",
+          "function": "Phosphorylates and inactivates Rb. Activated by Cyclin D.",
+          "is_core": true,
+          "orthologs": {
+            "human":      { "symbol": "CDK4/CDK6", "full_name": "Cyclin-dependent kinase 4/6",   "paralogs": [],       "disease": "Amplified in liposarcoma, breast; CDK4-R24C in familial melanoma" },
+            "mouse":      { "symbol": "Cdk4/Cdk6", "full_name": "Cyclin-dependent kinase 4/6",   "paralogs": [],       "note": "Cdk4-R24C KI → melanoma + pituitary; Cdk6 dominant in lymphoid cells" },
+            "drosophila": { "symbol": "Cdk4",       "full_name": "Cyclin-dependent kinase 4",     "paralogs": [],       "note": "Single Cdk4; no Cdk6 homolog in fly" },
+            "zebrafish":  { "symbol": "cdk4/cdk6",  "full_name": "Cyclin-dependent kinase 4/6",   "paralogs": [],       "note": "Both present; conserved kinase function" },
+            "worm":       { "symbol": "cdk-4",      "full_name": "Cyclin-dependent kinase 4",     "paralogs": [],       "note": "Single homolog; controls G1 in developing vulva" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.96, "level": "very_high", "notes": "Nearly identical. R24C mutation conserved in function." },
+            "human_zebrafish":  { "score": 0.85, "level": "high",      "notes": "High kinase domain conservation" },
+            "human_drosophila": { "score": 0.79, "level": "high",      "notes": "Fly Cdk4 kinase domain well conserved; absence of Cdk6 is key divergence" },
+            "human_worm":       { "score": 0.65, "level": "moderate",  "notes": "Kinase domain conserved; regulatory context differs" }
+          },
+          "translational_risk": "low",
+          "translational_notes": "CDK4 highly conserved. CDK6 absent in fly — important for haematopoietic models. R24C functional equivalence validated across species."
+        },
+
+        {
+          "id": "cyclin_d",
+          "role": "Cyclin / CDK activator",
+          "function": "Activates CDK4/6 in response to mitogenic signals. Three mammalian isoforms with tissue-specific expression.",
+          "is_core": true,
+          "orthologs": {
+            "human":      { "symbol": "CCND1/D2/D3", "full_name": "Cyclin D1/D2/D3", "paralogs": [],  "disease": "CCND1 amplified in breast, mantle cell lymphoma, head & neck" },
+            "mouse":      { "symbol": "Ccnd1/d2/d3",  "full_name": "Cyclin D1/D2/D3", "paralogs": [],  "note": "Ccnd1 OE → mammary adenocarcinoma; tissue isoforms conserved" },
+            "drosophila": { "symbol": "CycD",          "full_name": "Cyclin D",        "paralogs": [],  "note": "Single isoform; less mitogenic role; more involved in growth/endoreplication" },
+            "zebrafish":  { "symbol": "ccnd1/d2/d3",   "full_name": "Cyclin D1/D2/D3", "paralogs": [],  "note": "3 isoforms present; ccnd1 expressed in brain development" },
+            "worm":       { "symbol": "cyd-1",          "full_name": "Cyclin D",        "paralogs": [],  "note": "Single homolog; essential for G1 progression" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.93, "level": "very_high", "notes": "Isoform pattern and tissue specificity conserved" },
+            "human_zebrafish":  { "score": 0.77, "level": "high",      "notes": "3 isoforms present; ccnd1 brain role conserved" },
+            "human_drosophila": { "score": 0.41, "level": "low",       "notes": "Single fly CycD; functional emphasis differs — more growth than cell cycle entry" },
+            "human_worm":       { "score": 0.35, "level": "low",       "notes": "Single homolog; diverged regulatory context" }
+          },
+          "translational_risk": "moderate",
+          "translational_notes": "Fly CycD is functionally diverged — less predictive for cell cycle entry models. Mouse and zebrafish adequate. Key isoform distinction: CCND1 (breast/GI), CCND2 (haematopoietic), CCND3 (lymphoid)."
+        },
+
+        {
+          "id": "ink4_family",
+          "role": "CDK inhibitor / tumor suppressor",
+          "function": "Binds CDK4/6 monomers, prevents Cyclin D association, maintains Rb in active state.",
+          "is_core": true,
+          "orthologs": {
+            "human":      { "symbol": "CDKN2A/B/C/D", "full_name": "p16^INK4a / p15^INK4b / p18^INK4c / p19^INK4d", "paralogs": [], "disease": "CDKN2A most commonly silenced gene in cancer; familial melanoma, pancreatic, NSCLC" },
+            "mouse":      { "symbol": "Cdkn2a/b/c/d",  "full_name": "p16/p15/p18/p19",  "paralogs": [], "note": "All 4 present; Cdkn2a KO → lymphomas/sarcomas; p19ARF from same locus" },
+            "drosophila": { "symbol": "NONE",            "full_name": "No true INK4 homolog", "paralogs": [], "note": "CRITICAL GAP — fly has no INK4 family member; Roughex (Rux) is partial functional analog only" },
+            "zebrafish":  { "symbol": "cdkn2a/b",        "full_name": "p16/p15",          "paralogs": [], "note": "p16 and p15 present; p18/p19 less clear; zebrafish p16 regulates melanocyte senescence" },
+            "worm":       { "symbol": "NONE",             "full_name": "No INK4 homolog",  "paralogs": [], "note": "C. elegans lacks INK4 family" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.88, "level": "high",     "notes": "All 4 members present. p19ARF (mouse) ≈ p14ARF (human) — same locus, ~50% sequence identity, equivalent function" },
+            "human_zebrafish":  { "score": 0.61, "level": "moderate", "notes": "p16/p15 conserved; p18/p19 diverged; zebrafish p16 validated in melanoma modelling" },
+            "human_drosophila": { "score": 0.00, "level": "absent",   "notes": "No INK4 homolog. Roughex (Rux) overlaps functionally but is not structurally related. MAJOR translational gap." },
+            "human_worm":       { "score": 0.00, "level": "absent",   "notes": "No INK4 homolog in C. elegans" }
+          },
+          "translational_risk": "high",
+          "translational_notes": "CRITICAL: Fly is a poor model for INK4-mediated CDK4/6 inhibition (e.g. palbociclib MOA). Mouse and zebrafish are appropriate. Any drug screen in Drosophila that depends on p16 function will not translate."
+        },
+
+        {
+          "id": "e2f_family",
+          "role": "Transcription factor",
+          "function": "Drives S-phase gene transcription when released from Rb. E2F1 also activates ARF/apoptosis.",
+          "is_core": true,
+          "orthologs": {
+            "human":      { "symbol": "E2F1-8/DP1-2", "full_name": "E2F transcription factor family", "paralogs": [], "disease": "E2F1 overexpression in many cancers; E2F3 amplified in bladder cancer" },
+            "mouse":      { "symbol": "E2f1-8/Dp1-2",  "full_name": "E2F transcription factor family", "paralogs": [], "note": "E2f1 KO → testicular atrophy + T-cell lymphoma; closely mirrors human" },
+            "drosophila": { "symbol": "dE2F1/dE2F2/dDP","full_name": "dE2F1 (activating), dE2F2 (repressive)", "paralogs": [], "note": "Clean activator/repressor split — informed human E2F biology; 2 members vs 8" },
+            "zebrafish":  { "symbol": "e2f1-8",          "full_name": "E2F family",                      "paralogs": [], "note": "Full E2F family present; e2f1 regulates eye/brain development" },
+            "worm":       { "symbol": "efl-1/efl-2",      "full_name": "E2F-like transcription factors",  "paralogs": [], "note": "2 homologs; efl-1 is activating, efl-2 repressive — mirrors fly" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.94, "level": "very_high", "notes": "8-member family conserved; tissue and cell-cycle-stage expression patterns equivalent" },
+            "human_zebrafish":  { "score": 0.80, "level": "high",      "notes": "Full family present; key regulatory roles in development conserved" },
+            "human_drosophila": { "score": 0.58, "level": "moderate",  "notes": "Core DNA-binding domain conserved; only 2 members. Activator/repressor logic intact. Good model for pathway logic, not isoform-specific biology." },
+            "human_worm":       { "score": 0.45, "level": "moderate",  "notes": "efl-1/efl-2 mirror the activator/repressor split; core function conserved in simpler context" }
+          },
+          "translational_risk": "low",
+          "translational_notes": "E2F transcription is a highly conserved node. Fly useful for pathway-level screens. For isoform-specific biology (E2F3 in bladder cancer, E2F4 in quiescence), mouse is required."
+        },
+
+        {
+          "id": "cip_kip_family",
+          "role": "CDK inhibitor",
+          "function": "Broadly inhibits Cyclin-CDK complexes (especially Cyclin E-CDK2). Induced by DNA damage (p21) and growth factor withdrawal (p27).",
+          "is_core": true,
+          "orthologs": {
+            "human":      { "symbol": "CDKN1A/B/C", "full_name": "p21^CIP1 / p27^KIP1 / p57^KIP2", "paralogs": [], "disease": "p27 loss correlates with poor prognosis breast/colorectal; p57 mutations in Beckwith-Wiedemann" },
+            "mouse":      { "symbol": "Cdkn1a/b/c",  "full_name": "p21/p27/p57",                    "paralogs": [], "note": "p27 KO → pituitary hyperplasia; p57 essential for placental development" },
+            "drosophila": { "symbol": "dap",           "full_name": "Dacapo (p27-like)",               "paralogs": [], "note": "Single CIP/KIP homolog; most similar to p27; essential for G1 in post-mitotic cells" },
+            "zebrafish":  { "symbol": "cdkn1a/b",      "full_name": "p21/p27",                        "paralogs": [], "note": "p21/p27 conserved; p21 induced by DNA damage; p57 role in somitogenesis" },
+            "worm":       { "symbol": "cki-1/cki-2",   "full_name": "CKI-1/CKI-2 (p27-like)",         "paralogs": [], "note": "2 members; cki-1 controls G1 arrest in development" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.91, "level": "very_high", "notes": "All 3 members conserved; p21 p53-responsiveness equivalent" },
+            "human_zebrafish":  { "score": 0.78, "level": "high",      "notes": "p21/p27 conserved; p57 partially" },
+            "human_drosophila": { "score": 0.48, "level": "moderate",  "notes": "Single Dacapo most similar to p27. p21 DNA damage response not equivalent. Reduced complexity." },
+            "human_worm":       { "score": 0.42, "level": "moderate",  "notes": "cki-1/cki-2 functional analogs; less sequence identity but conserved CDK-inhibitory role" }
+          },
+          "translational_risk": "moderate",
+          "translational_notes": "Dacapo (fly) covers p27-like function but NOT p21 DNA damage response — important gap for genotoxic drug studies. Mouse covers all three members fully."
+        },
+
+        {
+          "id": "arf_p53",
+          "role": "Tumor suppressor failsafe",
+          "function": "ARF sequesters MDM2/Mdm2, stabilising p53. Links Rb loss to apoptosis/senescence. Critical secondary checkpoint.",
+          "is_core": false,
+          "orthologs": {
+            "human":      { "symbol": "CDKN2A(ARF)/TP53/MDM2", "full_name": "p14^ARF / p53 / MDM2",  "paralogs": [], "disease": "TP53 mutated in >50% cancers; MDM2 amplified in sarcomas" },
+            "mouse":      { "symbol": "Cdkn2a(Arf)/Trp53/Mdm2","full_name": "p19^ARF / p53 / Mdm2",  "paralogs": [], "note": "p19ARF ≈ p14ARF; ~50% sequence identity but equivalent Mdm2 sequestration" },
+            "drosophila": { "symbol": "Dp53/Dmn",               "full_name": "Drosophila p53 / Dmn",  "paralogs": [], "note": "p53 homolog present but E2F→ARF→MDM2 link is weaker; no clear ARF homolog" },
+            "zebrafish":  { "symbol": "tp53/mdm2",               "full_name": "p53 / MDM2",            "paralogs": [], "note": "p53/mdm2 axis well conserved; zebrafish p53 mutants are tumour prone" },
+            "worm":       { "symbol": "cep-1",                   "full_name": "C. elegans p53 homolog", "paralogs": [], "note": "cep-1 regulates apoptosis in germline; less clear somatic tumour suppressor role" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.90, "level": "very_high", "notes": "Functionally equivalent; p19ARF/p14ARF are different isoforms of same logic. Co-deletion of Rb+p53 required for full escape." },
+            "human_zebrafish":  { "score": 0.76, "level": "high",      "notes": "p53/mdm2 axis conserved; ARF less clear" },
+            "human_drosophila": { "score": 0.38, "level": "low",       "notes": "Dp53 present but ARF-MDM2 link is partial. Fly apoptosis program diverged (uses Reaper/Hid/Grim). Important gap for p53-targeted drug studies." },
+            "human_worm":       { "score": 0.30, "level": "low",       "notes": "cep-1 is germline apoptosis regulator; somatic tumour suppressor axis less conserved" }
+          },
+          "translational_risk": "high",
+          "translational_notes": "IMPORTANT: Fly is a poor model for ARF-p53-MDM2 axis. MDM2 inhibitors (nutlin-3a) should be validated in mouse or zebrafish, not fly. Worm unsuitable for this axis."
+        }
+      ]
+    },
+
+    {
+      "id": "notch_pathway",
+      "name": "Notch Signalling Pathway",
+      "description": "Cell-cell communication pathway controlling cell fate, differentiation, and tissue homeostasis.",
+      "disease_relevance": "T-ALL, CADASIL, Alagille syndrome, colorectal cancer, breast cancer",
+      "omim": "190198",
+      "kegg": "hsa04330",
+      "tags": ["development", "cell_fate", "cancer", "vascular"],
+
+      "components": [
+        {
+          "id": "notch_receptor",
+          "role": "Transmembrane receptor",
+          "function": "Receives Delta/Jagged ligand signals. Cleaved to release NICD which activates target genes.",
+          "is_core": true,
+          "orthologs": {
+            "human":      { "symbol": "NOTCH1-4",  "full_name": "Notch receptor 1-4",  "paralogs": [], "disease": "NOTCH1 mutations in T-ALL (>50%); NOTCH3 in CADASIL" },
+            "mouse":      { "symbol": "Notch1-4",   "full_name": "Notch receptor 1-4",  "paralogs": [], "note": "Notch1 KO lethal; Notch2 KO → vascular defects; closely mirrors human" },
+            "drosophila": { "symbol": "N",           "full_name": "Notch",               "paralogs": [], "note": "Single gene — where Notch was DISCOVERED; wing notching phenotype. Founding member." },
+            "zebrafish":  { "symbol": "notch1a/b/2", "full_name": "Notch receptors",    "paralogs": [], "note": "Multiple paralogs from teleost duplication; notch signalling controls somitogenesis clock" },
+            "worm":       { "symbol": "lin-12/glp-1","full_name": "Notch homologs",     "paralogs": [], "note": "lin-12 controls vulval fate; glp-1 controls germline proliferation" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.95, "level": "very_high", "notes": "All 4 paralogs conserved with equivalent tissue expression" },
+            "human_zebrafish":  { "score": 0.80, "level": "high",      "notes": "Conserved; teleost duplication adds paralogs but function maintained" },
+            "human_drosophila": { "score": 0.55, "level": "moderate",  "notes": "Core EGF repeats and NICD domain conserved. 1 fly gene vs 4 human. Founding discovery context." },
+            "human_worm":       { "score": 0.42, "level": "moderate",  "notes": "lin-12/glp-1 functional conservation; used extensively to define Notch logic" }
+          },
+          "translational_risk": "low",
+          "translational_notes": "Notch pathway logic deeply conserved. Fly models excellent for ligand-receptor interaction and downstream CSL/RBPJ signalling. Mouse required for tissue-specific isoform studies (NOTCH3 in vasculature)."
+        }
+      ]
+    },
+
+    {
+      "id": "wnt_pathway",
+      "name": "Wnt / β-catenin Signalling Pathway",
+      "description": "Regulates cell proliferation, differentiation, and tissue homeostasis. Named after Drosophila wingless (wg).",
+      "disease_relevance": "Colorectal cancer (APC), hepatocellular carcinoma, Wnt-driven medulloblastoma, developmental syndromes",
+      "omim": "116806",
+      "kegg": "hsa04310",
+      "tags": ["development", "cancer", "stem_cells", "tissue_homeostasis"],
+
+      "components": [
+        {
+          "id": "wnt_ligand",
+          "role": "Secreted ligand",
+          "function": "Binds Frizzled/LRP co-receptor to activate β-catenin pathway.",
+          "is_core": true,
+          "orthologs": {
+            "human":      { "symbol": "WNT1-19",     "full_name": "Wnt ligand family (19 members)", "paralogs": [], "disease": "WNT5A in melanoma; WNT signalling in >90% CRC" },
+            "mouse":      { "symbol": "Wnt1-19",      "full_name": "Wnt ligand family (19 members)", "paralogs": [], "note": "Wnt1 KO → cerebellum defects; mammary-specific Wnt1 OE → adenocarcinoma" },
+            "drosophila": { "symbol": "wg/Wnt2/4/5/6","full_name": "Wingless and Wnt family",       "paralogs": [], "note": "wingless (wg) is the founding member; 7 fly Wnt genes; wg controls segment polarity" },
+            "zebrafish":  { "symbol": "wnt1-18",       "full_name": "Wnt ligand family",             "paralogs": [], "note": "Many paralogs from teleost duplication; wnt signalling controls axis formation" },
+            "worm":       { "symbol": "lin-44/egl-20", "full_name": "Wnt homologs",                  "paralogs": [], "note": "5 Wnt genes; control cell polarity and fate specification" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.92, "level": "very_high", "notes": "19-member family conserved; tissue expression patterns equivalent" },
+            "human_zebrafish":  { "score": 0.78, "level": "high",      "notes": "High conservation; teleost paralogs from WGD" },
+            "human_drosophila": { "score": 0.48, "level": "moderate",  "notes": "wingless founding member; 7 fly Wnt genes. Core pathway logic (β-catenin/Armadillo) highly conserved." },
+            "human_worm":       { "score": 0.38, "level": "low",       "notes": "5 worm Wnt genes; pathway logic conserved but regulatory context diverged" }
+          },
+          "translational_risk": "moderate",
+          "translational_notes": "Wnt ligand specificity varies by tissue. Fly excellent for canonical Wnt/Wg pathway logic but ligand-receptor specificity differs. Mouse required for tissue-specific Wnt isoform studies."
+        },
+
+        {
+          "id": "apc",
+          "role": "Tumor suppressor / destruction complex",
+          "function": "Part of β-catenin destruction complex with Axin and GSK3β. APC loss → β-catenin nuclear accumulation → oncogenic Wnt target activation.",
+          "is_core": true,
+          "orthologs": {
+            "human":      { "symbol": "APC",    "full_name": "Adenomatous polyposis coli", "paralogs": ["APC2"], "disease": "FAP syndrome; mutated in >80% sporadic colorectal cancer" },
+            "mouse":      { "symbol": "Apc",     "full_name": "Adenomatous polyposis coli", "paralogs": ["Apc2"], "note": "Apc^Min/+ mouse — gold standard CRC model; develops intestinal polyps" },
+            "drosophila": { "symbol": "Apc/Apc2","full_name": "Adenomatous polyposis coli", "paralogs": [],       "note": "2 fly APC genes; Apc2 (E-APC) more important in Wg signalling; well conserved" },
+            "zebrafish":  { "symbol": "apc",      "full_name": "Adenomatous polyposis coli", "paralogs": [],       "note": "apc mutants show CNS overgrowth; intestinal phenotype less clear" },
+            "worm":       { "symbol": "apr-1",    "full_name": "APC-related",                "paralogs": [],       "note": "apr-1 controls cell polarity; partial functional conservation" }
+          },
+          "conservation": {
+            "human_mouse":      { "score": 0.90, "level": "very_high", "notes": "Highly conserved. Apc^Min/+ mouse is validated translational model for CRC." },
+            "human_zebrafish":  { "score": 0.72, "level": "high",      "notes": "apc conserved; intestinal model less developed than mouse" },
+            "human_drosophila": { "score": 0.51, "level": "moderate",  "notes": "2 fly APC genes; armadillo (β-catenin) destruction complex conserved. Fly useful for APC-Wnt pathway screens." },
+            "human_worm":       { "score": 0.38, "level": "low",       "notes": "apr-1 functional overlap; not a strong CRC model" }
+          },
+          "translational_risk": "low",
+          "translational_notes": "APC function in Wnt/β-catenin destruction complex is well conserved. Fly Apc/Apc2 suitable for Wnt pathway drug screens. Apc^Min/+ mouse is validated CRC model — use for therapeutic validation."
+        }
+      ]
+    }
+  ]
+}
