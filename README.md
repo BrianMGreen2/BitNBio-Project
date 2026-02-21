@@ -53,94 +53,234 @@ This gradient of complexity — from the fly's minimal viable circuit to the hum
 
 ---
 
+## Pipeline
+
+The core of this repository is a **Python analysis pipeline** that loads pathway and species data from JSON config files, computes quantitative conservation scores, identifies translational divergences, and generates educational reports automatically.
+
+### How it works
+
+```
+config/pathways.json          config/settings.json
+       │                              │
+       └──────────┬───────────────────┘
+                  ▼
+            pipeline.py
+                  │
+       ┌──────────┼──────────┐
+       ▼          ▼          ▼
+  per-species   multi-    educational
+  comparison   species      primer
+   reports     summary     (.md/.html)
+  (.md/.html)  (.md/.html)
+```
+
+### Quick start
+
+```bash
+git clone https://github.com/your-org/who-gives-a-fly.git
+cd who-gives-a-fly
+python pipeline.py --pathway rb_pathway --multi --primer
+```
+
+No dependencies beyond the Python standard library. Python ≥ 3.10 required.
+
+### Usage
+
+```bash
+# Compare one pathway across all model organisms, generate all report types
+python pipeline.py --pathway rb_pathway --multi --primer
+
+# All pathways, clinical audience level, markdown only
+python pipeline.py --pathway all --level clinical --formats markdown
+
+# Specific species, specific pathway
+python pipeline.py --pathway rb_pathway --species drosophila mouse --multi
+
+# See all available pathways
+python pipeline.py --list-pathways
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--pathway` | `rb_pathway` | Pathway ID to analyse, or `all` |
+| `--species` | all configured | Comparison species |
+| `--ref` | `human` | Reference species |
+| `--level` | `graduate` | Education level: `undergraduate` `graduate` `clinical` |
+| `--formats` | all | `markdown` `html` `json_report` |
+| `--multi` | off | Generate multi-species conservation summary |
+| `--primer` | off | Generate standalone educational primer |
+| `--output` | `output/` | Output directory |
+
+---
+
 ## Repository Structure
 
 ```
 who-gives-a-fly/
+├── pipeline.py                        # Main analysis + report generation pipeline
+│
+├── config/
+│   ├── pathways.json                  # Pathway database: orthologs, conservation scores, risk ratings
+│   └── settings.json                  # Thresholds, education levels, output config
+│
+├── output/                            # Generated reports (committed as examples)
+│   ├── rb_pathway__drosophila.md/.html
+│   ├── rb_pathway__mouse.md/.html
+│   ├── rb_pathway__zebrafish.md/.html
+│   ├── rb_pathway__worm.md/.html
+│   ├── rb_pathway__multi_species_summary.md/.html
+│   ├── rb_pathway__primer.md/.html
+│   ├── notch_pathway__*.md/.html
+│   └── wnt_pathway__*.md/.html
+│
 ├── data/
-│   ├── orthologs/          # Cross-species ortholog mappings (DIOPT, OrthoFinder)
-│   ├── expression/         # Tissue- and stage-specific expression profiles
-│   └── clinical/           # Human variant and clinical outcome data
+│   ├── orthologs/                     # Cross-species ortholog mappings (DIOPT, OrthoFinder)
+│   ├── expression/                    # Tissue- and stage-specific expression profiles
+│   └── clinical/                      # Human variant and clinical outcome data
+│
 ├── pathway_maps/
-│   ├── rb_pathway/         # Rb/E2F pathway maps across three species
-│   ├── comparisons/        # Divergence annotations and confidence scores
-│   └── diagrams/           # Visual pathway diagrams (.html, .md, .svg)
+│   ├── rb_pathway/                    # Rb/E2F pathway maps across three species
+│   ├── comparisons/                   # Divergence annotations and confidence scores
+│   └── diagrams/                      # Visual pathway diagrams (.html, .md)
+│
 ├── models/
-│   ├── translational/      # Predictive translational roadblock models
-│   └── validation/         # Cross-validation against known drug outcomes
+│   ├── translational/                 # Predictive translational roadblock models
+│   └── validation/                    # Cross-validation against known drug outcomes
+│
 ├── notebooks/
-│   ├── exploratory/        # Analysis and visualization notebooks
-│   └── figures/            # Publication-ready figure generation
-├── scripts/
-│   ├── ortholog_mapping.py
-│   ├── pathway_comparison.py
-│   └── divergence_scoring.py
+│   ├── exploratory/                   # Analysis and visualization notebooks
+│   └── figures/                       # Publication-ready figure generation
+│
 └── docs/
     └── pathway_glossary.md
 ```
 
 ---
 
-## Getting Started
+## Config Files
 
-### Prerequisites
+### `config/pathways.json`
 
-```bash
-python >= 3.9
-pip install -r requirements.txt
+The core knowledge database. Defines pathways, components, orthologs, and conservation scores for every species pair. Currently contains:
+
+| Pathway | ID | Components | Species covered |
+|---|---|---|---|
+| Retinoblastoma (Rb) Tumor Suppressor | `rb_pathway` | 7 | Human, Mouse, Fly, Zebrafish, Worm |
+| Notch Signalling | `notch_pathway` | 1 | Human, Mouse, Fly, Zebrafish, Worm |
+| Wnt / β-catenin | `wnt_pathway` | 2 | Human, Mouse, Fly, Zebrafish, Worm |
+
+Each component entry includes:
+
+```jsonc
+{
+  "id": "ink4_family",
+  "role": "CDK inhibitor / tumor suppressor",
+  "function": "Binds CDK4/6 monomers, prevents Cyclin D association...",
+  "orthologs": {
+    "human":      { "symbol": "CDKN2A/B/C/D", "disease": "Melanoma, pancreatic, NSCLC" },
+    "drosophila": { "symbol": "NONE", "note": "CRITICAL GAP — no fly homolog exists" },
+    "mouse":      { "symbol": "Cdkn2a/b/c/d", "note": "All 4 members present" }
+  },
+  "conservation": {
+    "human_drosophila": { "score": 0.00, "level": "absent",  "notes": "No INK4 homolog in fly." },
+    "human_mouse":      { "score": 0.88, "level": "high",    "notes": "All 4 members conserved." }
+  },
+  "translational_risk": "high",
+  "translational_notes": "Fly is a poor model for INK4-mediated CDK4/6 inhibition..."
+}
 ```
 
-### Installation
+### `config/settings.json`
 
-```bash
-git clone https://github.com/your-org/who-gives-a-fly.git
-cd who-gives-a-fly
-pip install -e .
+Controls conservation thresholds, risk level definitions, and education output profiles:
+
+```jsonc
+{
+  "conservation_thresholds": {
+    "very_high": { "min": 0.90, "symbol": "████", "description": "Highly predictive." },
+    "high":      { "min": 0.70, "symbol": "███░", "description": "Minor divergences." },
+    "moderate":  { "min": 0.45, "symbol": "██░░", "description": "Core function conserved." },
+    "low":       { "min": 0.20, "symbol": "█░░░", "description": "Use cautiously." },
+    "absent":    { "min": 0.00, "symbol": "░░░░", "description": "Do not extrapolate." }
+  },
+  "education_levels": {
+    "undergraduate": { "include_mechanisms": false, "include_clinical": true  },
+    "graduate":      { "include_mechanisms": true,  "include_clinical": true  },
+    "clinical":      { "include_mechanisms": false, "include_clinical": true  }
+  }
+}
 ```
 
-### Quick Start
+---
 
-```python
-from whogivesafly import PathwayMapper, TranslationalModel
+## Generated Outputs
 
-# Load the Rb pathway cross-species map
-rb_map = PathwayMapper.load("rb_pathway")
+Running the pipeline produces three types of report, in Markdown, HTML, and JSON:
 
-# Identify divergence points between fly and human
-divergences = rb_map.compare(species_a="drosophila", species_b="human")
-divergences.summary()
+**Per-species comparison report** (e.g. `rb_pathway__drosophila.md`)
+Detailed component-by-component analysis comparing one model organism to human. Includes conservation scores, ASCII conservation heatmap, species-specific ortholog table, and translational recommendations.
 
-# Score translational risk for a candidate compound
-model = TranslationalModel.from_pathway(rb_map)
-risk_score = model.score(compound="palbociclib", source_species="mouse")
-print(risk_score)
+**Multi-species summary** (`rb_pathway__multi_species_summary.md`)
+A single matrix view of conservation and translational risk across all model organisms simultaneously. The fastest way to choose the right model for a given research question.
+
+**Educational primer** (`rb_pathway__primer.md`)
+A standalone document explaining the pathway, its components, and translational implications — written for the specified audience level (undergraduate / graduate / clinical).
+
+Example conservation heatmap from a generated report:
+
 ```
+Component            Score   Bar     Risk  Level
+────────────────────────────────────────────────────────────
+rb1                   0.52   ██░░    ⚠️    Moderate
+cdk4_6                0.79   ███░    ✅    High
+cyclin_d              0.41   █░░░    ⚠️    Low
+ink4_family           0.00   ░░░░    🚫    Absent
+e2f_family            0.58   ██░░    ✅    Moderate
+cip_kip_family        0.48   ██░░    ⚠️    Moderate
+arf_p53               0.38   █░░░    🚫    Low
+────────────────────────────────────────────────────────────
+AVERAGE               0.45   ██░░
+```
+
+---
+
+## Extending the Pipeline
+
+**Adding a new pathway** — add a new entry to `config/pathways.json` following the existing structure. The pipeline picks it up automatically with `--pathway all`.
+
+**Adding a new species** — add the species metadata to the `metadata.species` block, then add ortholog entries and conservation scores for each pathway component. Run with `--species your_new_species`.
+
+**Adding a new output format** — subclass `MarkdownReportGenerator` or add a new generator class to `pipeline.py` and hook it into the `run_pipeline()` format dispatch block.
 
 ---
 
 ## Key Concepts
 
-### The Valley of Death
-The gap between preclinical efficacy and clinical success. Approximately 90% of compounds that enter clinical trials fail — a significant proportion due to unexpected species-specific biology that was never characterized.
+**The Valley of Death**
+The gap between preclinical efficacy and clinical success. Approximately 90% of compounds that enter clinical trials fail — a significant proportion due to unexpected species-specific biology that was never characterised.
 
-### Translational Roadblocks
-Specific molecular divergences between species that predict differential drug response. Examples include: gene family expansion (one fly gene → three human paralogs with distinct expression patterns), regulatory rewiring (same pathway, different upstream inputs), and tissue-specific isoform switching.
+**Translational Roadblocks**
+Specific molecular divergences between species that predict differential drug response. Examples include gene family expansion (one fly gene → three human paralogs with distinct expression), regulatory rewiring (same pathway, different upstream inputs), and tissue-specific isoform switching.
 
-### Conservation Score
-A compound metric capturing both sequence identity and functional equivalence of pathway components across species. High conservation score ≠ guaranteed translational success, but low score is a strong predictor of failure.
+**Conservation Score**
+A numeric metric (0–1) capturing sequence identity and functional equivalence of pathway components across species. High score ≠ guaranteed translational success, but a low or absent score is a strong predictor of failure.
+
+**Translational Risk**
+A qualitative rating (`low` / `moderate` / `high`) derived from conservation score, paralog complexity, and known biological divergences. Used to flag which components — and which model organisms — are appropriate for a given research question.
 
 ---
 
 ## Contributing
 
-We welcome contributions from researchers in genetics, computational biology, pharmacology, and translational medicine. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions from researchers in genetics, computational biology, pharmacology, and translational medicine. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 Areas where we are actively seeking input:
 
-- Additional pathway modules beyond Rb (Notch, Wnt, Hedgehog are priority targets)
+- Additional pathway modules (Hedgehog, PI3K/AKT, p53 are next priorities)
+- Quantitative conservation scores backed by published sequence alignments
 - Clinical outcome datasets for benchmarking translational predictions
 - Experimental validation in *Drosophila* disease models
-- Integration with existing drug repurposing databases
+- Integration with drug repurposing databases (ChEMBL, DGIdb)
 
 ---
 
@@ -154,6 +294,9 @@ Areas where we are actively seeking input:
 | [TCGA](https://www.cancer.gov/tcga) | Human cancer genomics |
 | [ChEMBL](https://www.ebi.ac.uk/chembl/) | Drug-target bioactivity data |
 | [STRING](https://string-db.org) | Protein interaction networks |
+| [MGI](https://www.informatics.jax.org) | Mouse genome informatics |
+| [ZFIN](https://zfin.org) | Zebrafish model organism database |
+| [WormBase](https://wormbase.org) | *C. elegans* genome and biology |
 
 ---
 
