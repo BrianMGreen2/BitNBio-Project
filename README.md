@@ -1197,6 +1197,22 @@ A qualitative rating (`low` / `moderate` / `high`) derived from conservation sco
 
 ---
 
+## Deeper reading
+
+This repository was also designed as a case study in **context engineering** — how to build the information architecture an AI system needs to be trustworthy across the full lifecycle of a knowledge-intensive domain, not just at initial deployment.
+
+Three documents develop this argument at increasing levels of abstraction:
+
+**[BACKGROUND.md](BACKGROUND.md)** explains why the preclinical-to-clinical translational gap exists at the biological level — the specific, predictable failure modes of species-specific pathway divergence that the current IND process does not require to be characterised, and why systematic cross-species analysis can identify them before clinical trials begin.
+
+**[AI_ASSISTED_CONTENT.md](AI_ASSISTED_CONTENT.md)** argues that closing the translational gap requires not just better data but custom-synthesised content for each of the six professional communities involved in a drug development programme — and what three constraints (grounded context, runtime validation, appropriate confidence propagation) make AI-assisted content generation trustworthy rather than dangerous in that setting. It includes a reading guide mapping each audience to the documents and tools most relevant to their role.
+
+**[CONTEXT_ENGINEERING.md](CONTEXT_ENGINEERING.md)** is the meta-level argument: the five design layers in this project — knowledge schema, evidence lifecycle, structured uncertainty representation, gap prioritisation, and lifecycle update architecture — are the correct layers to design, in that order, for any knowledge-intensive domain where AI systems will be used for high-stakes decisions. The Rb pathway is the worked example; the architecture is the transferable claim.
+
+Readers primarily interested in the biology and the pipeline can ignore these documents entirely. Readers interested in how to design AI systems that remain trustworthy as their knowledge base grows will find the most substantive material there.
+
+---
+
 ## Contributing
 
 We welcome contributions from researchers in genetics, computational biology, pharmacology, and translational medicine. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
