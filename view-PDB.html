@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDB Viewer - 9DHC</title>
+
+    <!-- React and ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+    <!-- Babel for JSX transformation in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- 3Dmol.js for molecular visualization -->
+    <script src="https://unpkg.com/3dmol/build/3Dmol-min.js"></script>
+
+    <!-- jQuery (required by 3Dmol.js) -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #root {
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px;
+        }
+
+        .app-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .app-header h1 {
+            font-size: 2rem;
+            color: #e94560;
+            margin-bottom: 8px;
+        }
+
+        .app-header p {
+            font-size: 1rem;
+            color: #a0a0b8;
+        }
+
+        .viewer-container {
+            background-color: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .viewer-wrapper {
+            position: relative;
+            width: 100%;
+            height: 600px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #0f3460;
+        }
+
+        .controls-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 16px;
+            justify-content: center;
+        }
+
+        .control-btn {
+            background-color: #0f3460;
+            color: #e0e0e0;
+            border: 1px solid #e94560;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        .control-btn:hover {
+            background-color: #e94560;
+            color: #ffffff;
+        }
+
+        .control-btn:active {
+            transform: scale(0.96);
+        }
+
+        .control-btn.active {
+            background-color: #e94560;
+            color: #ffffff;
+        }
+
+        .info-panel {
+            margin-top: 20px;
+            background-color: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .info-panel h2 {
+            color: #e94560;
+            margin-bottom: 12px;
+            font-size: 1.3rem;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .info-item {
+            background-color: #0f3460;
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .info-item .label {
+            font-size: 0.8rem;
+            color: #a0a0b8;
+            margin-bottom: 4px;
+        }
+
+        .info-item .value {
+            font-size: 1rem;
+            color: #ffffff;
+        }
+
+        .mouse-info {
+            margin-top: 16px;
+            background-color: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .mouse-info h2 {
+            color: #e94560;
+            margin-bottom: 12px;
+            font-size: 1.3rem;
+        }
+
+        .mouse-info ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .mouse-info ul li {
+            padding: 6px 0;
+            border-bottom: 1px solid #0f3460;
+            font-size: 0.95rem;
+        }
+
+        .mouse-info ul li:last-child {
+            border-bottom: none;
+        }
+
+        .mouse-info ul li strong {
+            color: #e94560;
+        }
+
+        .status-bar {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 0.9rem;
+            color: #a0a0b8;
+        }
+
+        .status-bar.loading {
+            color: #f0c040;
+        }
+
+        .status-bar.loaded {
+            color: #40c060;
+        }
+
+        .status-bar.error {
+            color: #e94560;
+        }
+
+        .atom-tooltip {
+            background-color: rgba(15, 52, 96, 0.95);
+            color: #ffffff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            border: 1px solid #e94560;
+            pointer-events: none;
+            position: absolute;
+            z-index: 1000;
+            display: none;
+        }
+
+        .click-info {
+            margin-top: 12px;
+            padding: 12px;
+            background-color: #0f3460;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            min-height: 40px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        const PDB_ID = "9DHC";
+
+        function App() {
+            return (
+                <div>
+                    <Header />
+                    <MoleculeViewer />
+                    <MouseInstructions />
+                </div>
+            );
+        }
+
+        function Header() {
+            return (
+                <div className="app-header">
+                    <h1>PDB 3D Viewer</h1>
+                    <p>Viewing structure: {PDB_ID} | Interactive molecular visualization</p>
+                </div>
+            );
+        }
+
+        function MoleculeViewer() {
+            const viewerDivRef = useRef(null);
+            const viewerRef = useRef(null);
+            const modelRef = useRef(null);
+            const tooltipRef = useRef(null);
+
+            const [status, setStatus] = useState("loading");
+            const [statusMessage, setStatusMessage] = useState("Initializing viewer...");
+            const [currentStyle, setCurrentStyle] = useState("cartoon");
+            const [clickedAtom, setClickedAtom] = useState(null);
+            const [moleculeInfo, setMoleculeInfo] = useState(null);
+
+            const applyStyle = useCallback((styleName, viewer, model) => {
+                if (!viewer || !model) return;
+
+                viewer.removeAllLabels();
+
+                switch (styleName) {
+                    case "cartoon":
+                        viewer.setStyle({}, { cartoon: { color: "spectrum" } });
+                        break;
+                    case "stick":
+                        viewer.setStyle({}, { stick: { colorscheme: "Jmol", radius: 0.15 } });
+                        break;
+                    case "sphere":
+                        viewer.setStyle({}, { sphere: { colorscheme: "Jmol", scale: 0.3 } });
+                        break;
+                    case "line":
+                        viewer.setStyle({}, { line: { colorscheme: "Jmol" } });
+                        break;
+                    case "ballstick":
+                        viewer.setStyle({}, {
+                            stick: { colorscheme: "Jmol", radius: 0.1 },
+                            sphere: { colorscheme: "Jmol", scale: 0.25 }
+                        });
+                        break;
+                    case "surface":
+                        viewer.setStyle({}, { cartoon: { color: "spectrum" } });
+                        viewer.addSurface(
+                            $3Dmol.SurfaceType.VDW,
+                            { opacity: 0.7, color: "white" },
+                            {}
+                        );
+                        break;
+                    default:
+                        viewer.setStyle({}, { cartoon: { color: "spectrum" } });
+                }
+
+                viewer.render();
+                setCurrentStyle(styleName);
+            }, []);
+
+            useEffect(function initViewer() {
+                if (!viewerDivRef.current) return;
+
+                var config = {
+                    backgroundColor: "#0a0a1a",
+                    antialias: true,
+                    cartoonQuality: 10
+                };
+
+                var viewer = $3Dmol.createViewer(viewerDivRef.current, config);
+                viewerRef.current = viewer;
+
+                setStatus("loading");
+                setStatusMessage("Fetching PDB data for " + PDB_ID + "...");
+
+                var pdbUrl = "https://files.rcsb.org/download/" + PDB_ID + ".pdb";
+
+                fetch(pdbUrl)
+                    .then(function (response) {
+                        if (!response.ok) {
+                            throw new Error("HTTP error, status: " + response.status);
+                        }
+                        return response.text();
+                    })
+                    .then(function (pdbData) {
+                        setStatusMessage("Parsing molecular structure...");
+
+                        var model = viewer.addModel(pdbData, "pdb");
+                        modelRef.current = model;
+
+                        // Extract molecule info from the PDB data
+                        var atoms = model.selectedAtoms({});
+                        var chains = new Set();
+                        var residues = new Set();
+                        atoms.forEach(function (atom) {
+                            if (atom.chain) chains.add(atom.chain);
+                            if (atom.resn && atom.resi) {
+                                residues.add(atom.chain + "_" + atom.resn + "_" + atom.resi);
+                            }
+                        });
+
+                        setMoleculeInfo({
+                            pdbId: PDB_ID,
+                            atomCount: atoms.length,
+                            chainCount: chains.size,
+                            residueCount: residues.size,
+                            chains: Array.from(chains).join(", ")
+                        });
+
+                        // Apply default cartoon style
+                        viewer.setStyle({}, { cartoon: { color: "spectrum" } });
+                        viewer.zoomTo();
+                        viewer.render();
+
+                        // Set up atom click callback
+                        viewer.setClickable({}, true, function (atom) {
+                            if (atom) {
+                                setClickedAtom({
+                                    element: atom.elem,
+                                    residueName: atom.resn,
+                                    residueIndex: atom.resi,
+                                    chain: atom.chain,
+                                    atomName: atom.atom,
+                                    x: atom.x ? atom.x.toFixed(3) : "N/A",
+                                    y: atom.y ? atom.y.toFixed(3) : "N/A",
+                                    z: atom.z ? atom.z.toFixed(3) : "N/A",
+                                    bFactor: atom.b ? atom.b.toFixed(2) : "N/A"
+                                });
+
+                                // Highlight clicked atom with a label
+                                viewer.removeAllLabels();
+                                viewer.addLabel(
+                                    atom.resn + " " + atom.resi + " (" + atom.atom + ")",
+                                    {
+                                        position: { x: atom.x, y: atom.y, z: atom.z },
+                                        backgroundColor: "rgba(233, 69, 96, 0.85)",
+                                        fontColor: "#ffffff",
+                                        fontSize: 12,
+                                        borderRadius: 4,
+                                        padding: 4
+                                    }
+                                );
+                                viewer.render();
+                            }
+                        });
+
+                        // Set up hover callback
+                        viewer.setHoverable(
+                            {},
+                            true,
+                            function (atom) {
+                                if (atom && tooltipRef.current) {
+                                    var tooltip = tooltipRef.current;
+                                    tooltip.textContent =
+                                        atom.resn + " " + atom.resi + " | " +
+                                        atom.atom + " (" + atom.elem + ") | Chain " + atom.chain;
+                                    tooltip.style.display = "block";
+                                }
+                            },
+                            function () {
+                                if (tooltipRef.current) {
+                                    tooltipRef.current.style.display = "none";
+                                }
+                            }
+                        );
+
+                        setStatus("loaded");
+                        setStatusMessage("Structure " + PDB_ID + " loaded successfully. " + atoms.length + " atoms rendered.");
+                    })
+                    .catch(function (err) {
+                        console.error("Error loading PDB:", err);
+                        setStatus("error");
+                        setStatusMessage("Failed to load PDB " + PDB_ID + ": " + err.message);
+                    });
+
+                // Track mouse movement for tooltip positioning
+                var handleMouseMove = function (e) {
+                    if (tooltipRef.current) {
+                        var rect = viewerDivRef.current.getBoundingClientRect();
+                        tooltipRef.current.style.left = (e.clientX - rect.left + 15) + "px";
+                        tooltipRef.current.style.top = (e.clientY - rect.top - 10) + "px";
+                    }
+                };
+
+                viewerDivRef.current.addEventListener("mousemove", handleMouseMove);
+
+                return function cleanup() {
+                    if (viewerDivRef.current) {
+                        viewerDivRef.current.removeEventListener("mousemove", handleMouseMove);
+                    }
+                    if (viewerRef.current) {
+                        viewerRef.current.clear();
+                    }
+                };
+            }, []);
+
+            var handleStyleChange = function (styleName) {
+                if (viewerRef.current && modelRef.current) {
+                    // Remove surfaces before applying new style
+                    viewerRef.current.removeAllSurfaces();
+                    applyStyle(styleName, viewerRef.current, modelRef.current);
+                }
+            };
+
+            var handleResetView = function () {
+                if (viewerRef.current) {
+                    viewerRef.current.zoomTo();
+                    viewerRef.current.render();
+                }
+            };
+
+            var handleSpin = function () {
+                if (viewerRef.current) {
+                    viewerRef.current.spin("y");
+                    setTimeout(function () {
+                        if (viewerRef.current) {
+                            viewerRef.current.spin(false);
+                        }
+                    }, 5000);
+                }
+            };
+
+            var handleClearLabels = function () {
+                if (viewerRef.current) {
+                    viewerRef.current.removeAllLabels();
+                    viewerRef.current.render();
+                    setClickedAtom(null);
+                }
+            };
+
+            var styles = [
+                { name: "cartoon", label: "Cartoon" },
+                { name: "stick", label: "Stick" },
+                { name: "sphere", label: "Sphere" },
+                { name: "line", label: "Line" },
+                { name: "ballstick", label: "Ball and Stick" },
+                { name: "surface", label: "Surface" }
+            ];
+
+            return (
+                <div>
+                    <div className="viewer-container">
+                        <div className="viewer-wrapper">
+                            <div
+                                ref={viewerDivRef}
+                                style={{ width: "100%", height: "100%", position: "relative" }}
+                            >
+                                <div ref={tooltipRef} className="atom-tooltip"></div>
+                            </div>
+                        </div>
+
+                        <div className={"status-bar " + status}>
+                            {statusMessage}
+                        </div>
+
+                        <div className="controls-bar">
+                            {styles.map(function (s) {
+                                return (
+                                    <button
+                                        key={s.name}
+                                        className={"control-btn" + (currentStyle === s.name ? " active" : "")}
+                                        onClick={function () { handleStyleChange(s.name); }}
+                                    >
+                                        {s.label}
+                                    </button>
+                                );
+                            })}
+                            <button className="control-btn" onClick={handleResetView}>
+                                Reset View
+                            </button>
+                            <button className="control-btn" onClick={handleSpin}>
+                                Spin (5s)
+                            </button>
+                            <button className="control-btn" onClick={handleClearLabels}>
+                                Clear Labels
+                            </button>
+                        </div>
+
+                        {clickedAtom && (
+                            <div className="click-info">
+                                <strong>Clicked Atom:</strong>{" "}
+                                {clickedAtom.atomName} ({clickedAtom.element}) |{" "}
+                                Residue: {clickedAtom.residueName} {clickedAtom.residueIndex} |{" "}
+                                Chain: {clickedAtom.chain} |{" "}
+                                Position: ({clickedAtom.x}, {clickedAtom.y}, {clickedAtom.z}) |{" "}
+                                B-factor: {clickedAtom.bFactor}
+                            </div>
+                        )}
+                    </div>
+
+                    {moleculeInfo && (
+                        <div className="info-panel">
+                            <h2>Molecule Information</h2>
+                            <div className="info-grid">
+                                <div className="info-item">
+                                    <div className="label">PDB ID</div>
+                                    <div className="value">{moleculeInfo.pdbId}</div>
+                                </div>
+                                <div className="info-item">
+                                    <div className="label">Total Atoms</div>
+                                    <div className="value">{moleculeInfo.atomCount.toLocaleString()}</div>
+                                </div>
+                                <div className="info-item">
+                                    <div className="label">Chains</div>
+                                    <div className="value">{moleculeInfo.chains || "N/A"}</div>
+                                </div>
+                                <div className="info-item">
+                                    <div className="label">Chain Count</div>
+                                    <div className="value">{moleculeInfo.chainCount}</div>
+                                </div>
+                                <div className="info-item">
+                                    <div className="label">Residues</div>
+                                    <div className="value">{moleculeInfo.residueCount.toLocaleString()}</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function MouseInstructions() {
+            return (
+                <div className="mouse-info">
+                    <h2>Mouse Controls</h2>
+                    <ul>
+                        <li><strong>Left-click + Drag:</strong> Rotate the molecule in 3D</li>
+                        <li><strong>Right-click + Drag:</strong> Translate (pan) the molecule</li>
+                        <li><strong>Scroll Wheel:</strong> Zoom in and out</li>
+                        <li><strong>Middle-click + Drag:</strong> Slab (clip) the view</li>
+                        <li><strong>Left-click on Atom:</strong> Select atom and display its information</li>
+                        <li><strong>Hover over Atom:</strong> Show atom tooltip with residue and element details</li>
+                    </ul>
+                </div>
+            );
+        }
+
+        var rootElement = document.getElementById("root");
+        var root = ReactDOM.createRoot(rootElement);
+        root.render(React.createElement(App));
+    </script>
+</body>
+</html>
