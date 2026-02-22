@@ -246,6 +246,133 @@ AVERAGE               0.45   ██░░
 
 ---
 
+---
+
+## Translational Risk Scoring
+
+The pipeline's conservation scores tell you *how similar* two genes are. But similarity alone is not enough to predict whether drug findings in a fly or mouse will hold up in a human clinical trial. The **translational risk scoring system** addresses this directly — it combines sequence conservation with four other dimensions of biological equivalence to produce a composite risk rating for every pathway component × model organism pair.
+
+### The five dimensions
+
+Risk is computed across five independently weighted dimensions. Each is scored 0–5.
+
+| # | Dimension | Weight | What it captures |
+|---|-----------|--------|-----------------|
+| **D1** | Sequence conservation | 30% | Protein identity and domain coverage between model and human |
+| **D2** | Paralog complexity | 20% | Gene family size mismatch and compensation risk |
+| **D3** | Regulatory context | 20% | Upstream inputs, PTM sites, tissue expression overlap |
+| **D4** | Phenotypic validity | 20% | Experimental evidence that the model recapitulates human disease |
+| **D5** | Therapeutic evidence | 10% | Drug response concordance between model and human |
+
+The weights reflect a deliberate hierarchy. Sequence conservation is necessary but not sufficient — a 90% identical protein embedded in a completely rewired regulatory network will still fail to translate. Phenotypic validity (D4) is the most direct evidence available, but often the hardest to obtain, which is why it shares equal weight with regulatory context rather than dominating the score.
+
+### How scores map to risk levels
+
+Each dimension score is normalised to 0–1, multiplied by its weight, and summed into a composite:
+
+```
+composite = (D1×0.30 + D2×0.20 + D3×0.20 + D4×0.20 + D5×0.10)
+
+Score ≥ 0.75  →  ✅  Low Risk      Model findings likely to translate directly
+Score ≥ 0.50  →  ⚠️  Moderate Risk  Translate with caution; validate divergent dimensions
+Score ≥ 0.25  →  🚫  High Risk      Do not extrapolate without orthogonal validation
+Score < 0.25  →  💀  Critical Gap   Use an alternative model or human-derived system
+```
+
+### Override rules
+
+Certain conditions are serious enough to elevate the final risk level regardless of the composite score. These are applied *after* the weighted sum:
+
+| Rule | Condition | Override |
+|------|-----------|---------|
+| OR-01 | D1 = 0 — no homolog exists | → Critical |
+| OR-02 | D4 = 0 — phenotype experimentally contradicted | → High |
+| OR-03 | D5 = 0 — drug response known to be discordant | → High |
+| OR-04 | D2 = 0 AND D1 ≤ 2 — no homolog, low similarity | → Critical |
+| OR-05 | D3 ≤ 1 AND D4 ≤ 1 — regulatory and phenotypic evidence both weak | → High |
+
+The INK4 family in *Drosophila* is a clear example of OR-01 firing: there is no fly homolog of p16/p15/p18/p19, so regardless of how well the rest of the Rb pathway is conserved, the fly is a poor model for any drug mechanism that depends on INK4-mediated CDK4/6 inhibition. This is exactly the kind of gap that causes clinical trial failure when missed.
+
+### Modifier rules
+
+Positive or negative adjustments to the composite score can be applied when specific evidence is present:
+
+| Rule | Condition | Adjustment |
+|------|-----------|-----------|
+| MR-01 | Human gene rescues model phenotype | +0.10 |
+| MR-02 | Drug concordance replicated in ≥2 independent studies | +0.08 |
+| MR-03 | Tissue expression mismatch for disease-relevant cell type | −0.10 |
+| MR-04 | Zebrafish whole-genome duplication creates subfunctionalised paralogs | −0.08 |
+| MR-05 | Convergent evolution — same phenotype, different mechanism | −0.12 |
+
+MR-05 deserves particular attention. A model organism can produce a phenotype that looks like the human disease through an entirely different molecular mechanism. This is dangerous for drug development because a compound that corrects the model phenotype may be acting on the model-specific mechanism rather than the conserved one — and will therefore fail in humans.
+
+### Warning flags
+
+Flags are raised independently of the composite score and annotate each assessment record with interpretive warnings. They are surfaced in reports to draw attention to specific biological features that the numeric score alone may not capture:
+
+| Flag | Severity | Meaning |
+|------|---------|---------|
+| `no_homolog` | Critical | Component cannot be studied in this model at all |
+| `paralog_compensation_risk` | High | Paralog compensation may mask loss-of-function phenotype |
+| `tissue_expression_mismatch` | High | Gene not expressed in the disease-relevant tissue equivalent |
+| `ptm_site_absent` | Moderate | Key phosphorylation or ubiquitination site missing |
+| `regulatory_rewiring` | Moderate | Documented change in upstream or downstream connections |
+| `developmental_vs_somatic_mismatch` | Moderate | Model phenotype is developmental; human disease is adult/somatic |
+| `drug_discordance` | Critical | Known failure of drug response concordance for this target |
+| `wgd_paralog_risk` | Moderate | Zebrafish WGD extra paralogs — assess subfunctionalisation |
+
+### The config files
+
+Two new files in `config/` define and drive the scoring system:
+
+**`config/translational_risk_rubric_data.json`** is the working rubric — the file curators edit to refine scoring logic. It contains all five dimension definitions with their level criteria, the override and modifier rule sets, flag definitions, and risk level thresholds. When you want to tighten a criterion, add a new modifier rule, or update a threshold based on new evidence, this is the file you change.
+
+**`config/translational_risk_rubric.json`** is the formal JSON Schema that defines what a valid rubric file must look like. It specifies required fields, value types, and constraints. This is used to validate new rubric versions programmatically before they are accepted — important for maintaining consistency as the rubric evolves and contributors propose changes.
+
+The separation is intentional: the schema enforces structure, the data file holds content. You can update scoring criteria without touching the schema, and you can tighten the schema's validation rules without changing any scores.
+
+### The scoring engine
+
+**`risk_scorer.py`** implements each dimension as a separate method, so they can be improved independently as richer data becomes available. The engine currently derives D3–D5 scores by inference from annotations already present in `pathways.json` — a deliberate design choice that lets the system produce useful scores immediately while clearly flagging in every output where richer data would improve precision.
+
+```bash
+# Score one pathway for all species
+python risk_scorer.py --pathway rb_pathway --species drosophila mouse zebrafish worm
+
+# Score all pathways and generate the rubric reference card
+python risk_scorer.py --pathway all --species drosophila mouse zebrafish worm
+
+# Print the rubric reference card to stdout
+python risk_scorer.py --rubric-card
+
+# Validate that the rubric data file is well-formed
+python risk_scorer.py --validate-rubric
+```
+
+Outputs are written to `output/` as `{pathway}__{risk}__{species}.md` and `.json`. The JSON output contains the full structured assessment record for each component, including all dimension scores, applied modifiers and overrides, raised flags, and a plain-language narrative — suitable for downstream processing, database ingestion, or feeding into the educational report generator in `pipeline.py`.
+
+### Example: Rb pathway, *Drosophila* vs Human
+
+The scoring system produces scientifically meaningful differentiation even within a single pathway. For the Rb pathway in *Drosophila*:
+
+```
+Component         D1   D2   D3   D4   D5   Composite   Risk
+─────────────────────────────────────────────────────────────
+rb1               3    4    3    4    2    0.66 ███░    ⚠️  Moderate
+cdk4_6            4    5    4    4    2    0.80 ████    ✅  Low
+cyclin_d          2    5    2    3    2    0.56 ███░    ⚠️  Moderate
+ink4_family       0    0    0    0    0    0.00 ░░░░    💀  Critical ← OR-01
+e2f_family        3    5    3    3    2    0.66 ███░    ⚠️  Moderate
+cip_kip_family    3    5    3    3    2    0.66 ███░    ⚠️  Moderate
+arf_p53           2    5    0    0    3    0.38 ██░░    🚫  High ← OR-05
+─────────────────────────────────────────────────────────────
+```
+
+This tells a researcher: use *Drosophila* freely for CDK4 biology (Low Risk), use it cautiously for RBF1/E2F studies with complementary validation (Moderate Risk), and do not use it for INK4 inhibitor drug screens or ARF/p53 failsafe studies (Critical/High Risk). That is a directly actionable set of model organism selection decisions — which is exactly what the scoring system is designed to produce.
+
+---
+
 ## Extending the Pipeline
 
 **Adding a new pathway** — add a new entry to `config/pathways.json` following the existing structure. The pipeline picks it up automatically with `--pathway all`.
