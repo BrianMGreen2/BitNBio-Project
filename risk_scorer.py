@@ -120,6 +120,26 @@ class TranslationalRiskScorer:
         "D5": 0.10,  # Therapeutic evidence
     }
 
+    ENRICHED_DIR = "data/enriched"
+
+    def _conservation_pct_to_d1(self, pct_id: float) -> int:
+        if pct_id >= 0.90: return 5
+        if pct_id >= 0.70: return 4
+        if pct_id >= 0.45: return 3
+        if pct_id >= 0.20: return 2
+        if pct_id >  0.00: return 1
+        return 0
+
+    def load_enriched(self, pathway_id: str, component_id: str) -> dict:
+        """Load API-enriched data from data/enriched/. Returns {} if not found."""
+        import os
+        path = os.path.join(self.ENRICHED_DIR, f"{pathway_id}__{component_id}__enriched.json")
+        if os.path.exists(path):
+            try:
+                with open(path) as f: return json.load(f)
+            except Exception: return {}
+        return {}
+
     # Maps (conservation_level from pathways.json) → D1 raw score
     CONSERVATION_LEVEL_TO_D1 = {
         "very_high": 5,
@@ -153,7 +173,24 @@ class TranslationalRiskScorer:
 
     # ── D1: Sequence conservation ──────────────────────────
 
-    def score_D1(self, component: dict, ref: str, compare: str) -> DimensionScore:
+    def score_D1(self, component: dict, ref: str, compare: str,
+                 pathway_id: str = "") -> DimensionScore:
+        if pathway_id:
+            enriched  = self.load_enriched(pathway_id, component["id"])
+            d1_data   = enriched.get("enrichments", {}).get("D1_ensembl", {})
+            pair_key  = f"{ref}_{compare}"
+            pair_entry = d1_data.get(pair_key) if isinstance(d1_data, dict) else None
+            if pair_entry and pair_entry.get("status") == "found":
+                pct_id  = pair_entry.get("percent_id", 0.0)
+                score   = self._conservation_pct_to_d1(pct_id)
+                symbol  = pair_entry.get("target_gene_symbol", compare)
+                rationale = (
+                    f"[ENRICHED] Ensembl sequence identity: {pct_id*100:.1f}% "
+                    f"({pair_entry.get('homology_type','ortholog')}). "
+                    f"Model gene: {symbol}. Retrieved: {pair_entry.get('retrieved_date','?')}."
+                )
+                return DimensionScore(raw=score, rationale=rationale,
+                                      dimension="D1", scored_by="enriched")
         key     = f"{ref}_{compare}"
         alt_key = f"{compare}_{ref}"
         cons    = component.get("conservation", {})
@@ -183,7 +220,25 @@ class TranslationalRiskScorer:
 
     # ── D2: Paralog complexity ─────────────────────────────
 
-    def score_D2(self, component: dict, ref: str, compare: str) -> DimensionScore:
+    def score_D2(self, component: dict, ref: str, compare: str,
+                 pathway_id: str = "") -> DimensionScore:
+        if pathway_id:
+            enriched = self.load_enriched(pathway_id, component["id"])
+            d2_data  = enriched.get("enrichments", {}).get("D2_ensembl", {})
+            if d2_data and d2_data.get("n_paralogs") is not None:
+                n_ref  = d2_data["n_paralogs"]
+                n_comp = len(component.get("orthologs",{}).get(compare,{}).get("paralogs",[]))
+                delta  = abs(n_ref - n_comp)
+                score  = 5 if delta==0 else 4 if delta==1 else 3 if delta<=3 else 2 if delta<=5 else 1
+                comp_sym = component.get("orthologs",{}).get(compare,{}).get("symbol","")
+                if comp_sym in ("NONE","") and n_ref > 2: score = max(score-1, 0)
+                syms = ", ".join(d2_data.get("paralog_symbols",[])[:4])
+                rationale = (
+                    f"[ENRICHED] Ensembl human paralogs: {n_ref} ({syms}). "
+                    f"{compare.capitalize()} paralogs: {n_comp}. Delta: {delta}."
+                )
+                return DimensionScore(raw=score, rationale=rationale,
+                                      dimension="D2", scored_by="enriched")
         ref_orth  = component.get("orthologs", {}).get(ref, {})
         comp_orth = component.get("orthologs", {}).get(compare, {})
 
@@ -613,8 +668,8 @@ class TranslationalRiskScorer:
     def assess(self, component: dict, pathway_id: str,
                ref: str = "human", compare: str = "drosophila") -> RiskAssessment:
 
-        d1 = self.score_D1(component, ref, compare)
-        d2 = self.score_D2(component, ref, compare)
+        d1 = self.score_D1(component, ref, compare, pathway_id=pathway_id)
+        d2 = self.score_D2(component, ref, compare, pathway_id=pathway_id)
         d3 = self.score_D3(component, ref, compare)
         d4 = self.score_D4(component, ref, compare)
         d5 = self.score_D5(component, ref, compare)

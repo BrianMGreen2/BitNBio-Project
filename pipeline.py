@@ -21,6 +21,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# Optional: risk scoring integration (graceful fallback if not available)
+try:
+    from risk_scorer import TranslationalRiskScorer
+    _RISK_SCORER_AVAILABLE = True
+except ImportError:
+    _RISK_SCORER_AVAILABLE = False
+
 
 # ─────────────────────────────────────────────
 # Data loading
@@ -31,10 +38,12 @@ def load_json(path: str) -> dict:
         return json.load(f)
 
 
-def load_config(config_dir: str = "config") -> tuple[dict, dict]:
+def load_config(config_dir: str = "config") -> tuple[dict, dict, dict]:
     pathways = load_json(os.path.join(config_dir, "pathways.json"))
     settings = load_json(os.path.join(config_dir, "settings.json"))
-    return pathways, settings
+    rubric_path = os.path.join(config_dir, "translational_risk_rubric_data.json")
+    rubric = load_json(rubric_path) if os.path.exists(rubric_path) else {}
+    return pathways, settings, rubric
 
 
 # ─────────────────────────────────────────────
@@ -642,7 +651,7 @@ def run_pipeline(
     generate_primer: bool  = False,
     generate_multi:  bool  = False,
 ):
-    pathways_db, settings = load_config(config_dir)
+    pathways_db, settings, rubric = load_config(config_dir)
     species_meta = pathways_db["metadata"]["species"]
 
     if comp_species is None:
@@ -700,6 +709,30 @@ def run_pipeline(
                 path = build_output_path(output_dir, pid, sp, "json")
                 save_json_report(result, path)
                 print(f"    ✓ JSON     → {path}")
+
+            # Risk scoring integration: run risk_scorer for each component × species
+            if _RISK_SCORER_AVAILABLE and rubric:
+                try:
+                    scorer = TranslationalRiskScorer(rubric, pathways_db)
+                    risk_records = []
+                    for comp in pathway.get("components", []):
+                        assessment = scorer.assess(comp, pid, ref=ref_species, compare=sp)
+                        risk_records.append({
+                            "component_id":   assessment.component_id,
+                            "final_risk":     assessment.final_risk,
+                            "risk_label":     assessment.risk_label,
+                            "risk_icon":      assessment.risk_icon,
+                            "composite":      assessment.composite_modified,
+                            "evidence_tier":  assessment.evidence_tier,
+                            "flags":          assessment.flags_raised,
+                        })
+                    # Attach risk assessments to the JSON report
+                    result["risk_assessments"] = risk_records
+                    # Re-save JSON with risk data included
+                    if "json_report" in formats:
+                        save_json_report(result, build_output_path(output_dir, pid, sp, "json"))
+                except Exception as e:
+                    print(f"    WARN: Risk scoring failed for {sp}: {e}")
 
         # Multi-species summary
         if generate_multi and len(all_results) > 1:

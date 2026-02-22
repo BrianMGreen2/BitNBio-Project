@@ -2,24 +2,77 @@
   "settings": {
     "output_dir": "output",
     "default_reference_species": "human",
-    "default_comparison_species": ["drosophila", "mouse", "zebrafish", "worm"],
-    "generate_formats": ["markdown", "html", "json_report"]
+    "default_comparison_species": [
+      "drosophila",
+      "mouse",
+      "zebrafish",
+      "worm"
+    ],
+    "generate_formats": [
+      "markdown",
+      "html",
+      "json_report"
+    ]
   },
-
   "conservation_thresholds": {
-    "very_high": { "min": 0.90, "label": "Very High", "symbol": "████", "color": "#2d6a4f", "description": "Near-identical function and sequence. Model organism findings highly predictive." },
-    "high":      { "min": 0.70, "label": "High",      "symbol": "███░", "color": "#52b788", "description": "Strong conservation. Minor divergences unlikely to affect translational validity." },
-    "moderate":  { "min": 0.45, "label": "Moderate",  "symbol": "██░░", "color": "#f4a261", "description": "Core function conserved but regulatory context or paralog number may differ." },
-    "low":       { "min": 0.20, "label": "Low",        "symbol": "█░░░", "color": "#e76f51", "description": "Functional analog exists but significant structural divergence. Use cautiously." },
-    "absent":    { "min": 0.00, "label": "Absent",     "symbol": "░░░░", "color": "#d62828", "description": "No functional homolog. Major translational gap. Do not extrapolate." }
+    "very_high": {
+      "min": 0.9,
+      "label": "Very High",
+      "symbol": "\u2588\u2588\u2588\u2588",
+      "color": "#2d6a4f",
+      "description": "Near-identical function and sequence. Model organism findings highly predictive."
+    },
+    "high": {
+      "min": 0.7,
+      "label": "High",
+      "symbol": "\u2588\u2588\u2588\u2591",
+      "color": "#52b788",
+      "description": "Strong conservation. Minor divergences unlikely to affect translational validity."
+    },
+    "moderate": {
+      "min": 0.45,
+      "label": "Moderate",
+      "symbol": "\u2588\u2588\u2591\u2591",
+      "color": "#f4a261",
+      "description": "Core function conserved but regulatory context or paralog number may differ."
+    },
+    "low": {
+      "min": 0.2,
+      "label": "Low",
+      "symbol": "\u2588\u2591\u2591\u2591",
+      "color": "#e76f51",
+      "description": "Functional analog exists but significant structural divergence. Use cautiously."
+    },
+    "absent": {
+      "min": 0.0,
+      "label": "Absent",
+      "symbol": "\u2591\u2591\u2591\u2591",
+      "color": "#d62828",
+      "description": "No functional homolog. Major translational gap. Do not extrapolate."
+    }
   },
-
   "translational_risk_levels": {
-    "low":      { "label": "Low Risk",      "icon": "✅", "description": "Model organism findings likely to translate." },
-    "moderate": { "label": "Moderate Risk", "icon": "⚠️", "description": "Translate with caution — verify key divergences." },
-    "high":     { "label": "High Risk",     "icon": "🚫", "description": "Significant gap. Findings may not translate. Use alternative model." }
+    "low": {
+      "label": "Low Risk",
+      "icon": "\u2705",
+      "description": "Model organism findings likely to translate."
+    },
+    "moderate": {
+      "label": "Moderate Risk",
+      "icon": "\u26a0\ufe0f",
+      "description": "Translate with caution \u2014 verify key divergences."
+    },
+    "high": {
+      "label": "High Risk",
+      "icon": "\ud83d\udeab",
+      "description": "Significant gap. Findings may not translate. Use alternative model."
+    },
+    "critical": {
+      "label": "Critical Gap",
+      "icon": "\ud83d\udc80",
+      "description": "No meaningful model exists. Do not extrapolate \u2014 use organoids, iPSCs, or patient samples."
+    }
   },
-
   "education_levels": {
     "undergraduate": {
       "label": "Undergraduate",
@@ -46,7 +99,6 @@
       "glossary_depth": "clinical"
     }
   },
-
   "diagram_styles": {
     "ascii_width": 70,
     "conservation_bar_width": 4,
