@@ -373,6 +373,323 @@ This tells a researcher: use *Drosophila* freely for CDK4 biology (Low Risk), us
 
 ---
 
+---
+
+## Inference Flags and Data Enrichment
+
+### Where inference is used and why
+
+The scoring engine produces useful risk assessments immediately — but three of the five dimensions (D3, D4, D5) currently derive their scores by inference from free-text annotations already present in `pathways.json`, rather than from structured ground-truth data. This was a deliberate design choice: it lets the system run without external dependencies and surface meaningful differentiation on day one, while being transparent about where the scores are estimated versus measured.
+
+Every inferred score is flagged in the output. When you see the following phrases in a dimension rationale field, the score was derived by inference and should be treated as an estimate:
+
+```
+# D3 — Regulatory context
+"Regulatory context score derived from conservation level (...) and species-specific notes.
+ Note: Full regulatory scoring requires explicit regulatory_context entries in pathways.json."
+
+# D4 — Phenotypic validity
+"Phenotypic validity estimated from translational notes and ortholog-specific annotations.
+ Legacy risk rating: {low|moderate|high}. For precise scoring, add phenotypic_evidence
+ entries to pathways.json."
+
+# D5 — Therapeutic evidence
+"Therapeutic evidence estimated from disease annotations and translational notes.
+ Disease context: '...'. For precise scoring, add pharmacological_evidence entries
+ to pathways.json."
+```
+
+The `evidence_tier` field in every JSON output record also signals this globally:
+
+```json
+"evidence_tier": "inferred"
+```
+
+When a dimension is scored from structured ground-truth data, this changes to `"validated"` at the component level. When all five dimensions are ground-truth scored, the record-level `evidence_tier` upgrades to `"validated"` as well. This field is the primary machine-readable signal for downstream consumers (dashboards, databases, report generators) to distinguish estimated from measured scores.
+
+---
+
+### What triggers each inference flag
+
+The three inferred dimensions each detect ground-truth data via a specific key they look for in `pathways.json`. When that key is absent, inference mode activates.
+
+**D3 — Regulatory context** looks for a `regulatory_context` block in the component entry:
+
+```jsonc
+// Ground-truth entry — D3 scores from this directly
+"regulatory_context": {
+  "human_drosophila": {
+    "upstream_inputs_conserved":    false,
+    "downstream_targets_conserved": true,
+    "ptm_sites_conserved":          false,
+    "tissue_expression_overlap":    0.3,
+    "known_rewiring":               true,
+    "score": 2,
+    "notes": "TGF-β input absent in fly; Armadillo/β-catenin targets partially conserved."
+  }
+}
+
+// Without this block → D3 infers from conservation level + keyword scan of notes fields
+```
+
+**D4 — Phenotypic validity** looks for a `phenotypic_evidence` array:
+
+```jsonc
+// Ground-truth entry — D4 scores from this directly
+"phenotypic_evidence": [
+  {
+    "model_species":  "mouse",
+    "evidence_type":  "knockout",
+    "pmid":           "7585548",
+    "score":          3,
+    "description":    "Rb1 homozygous KO lethal E14.5; heterozygotes develop pituitary tumours, not retinoblastoma.",
+    "supports_validity": true,
+    "caveats":        "Tumour spectrum differs from human. Does not model retinal disease."
+  },
+  {
+    "model_species":  "mouse",
+    "evidence_type":  "rescue",
+    "pmid":           "8413634",
+    "score":          5,
+    "description":    "Human RB1 rescues developmental defects in Rb1-null mouse embryos.",
+    "supports_validity": true
+  }
+]
+
+// Without this array → D4 infers from translational_risk + keyword scan of notes fields
+```
+
+**D5 — Therapeutic evidence** looks for a `pharmacological_evidence` array:
+
+```jsonc
+// Ground-truth entry — D5 scores from this directly
+"pharmacological_evidence": [
+  {
+    "drug":           "palbociclib",
+    "target":         "CDK4/CDK6",
+    "model_species":  "mouse",
+    "evidence_type":  "in_vivo",
+    "pmid":           "24122810",
+    "concordance":    true,
+    "score":          4,
+    "notes":          "Tumour regression in Rb1-intact mouse mammary model; concordant with HR+ breast cancer clinical outcome."
+  },
+  {
+    "drug":           "palbociclib",
+    "target":         "CDK4/CDK6",
+    "model_species":  "drosophila",
+    "evidence_type":  "in_vivo",
+    "pmid":           null,
+    "concordance":    null,
+    "score":          1,
+    "notes":          "No published pharmacological data for palbociclib in Drosophila CDK4 models."
+  }
+]
+
+// Without this array → D5 infers from disease field + keyword scan of translational_notes
+```
+
+Adding any of these structured blocks to a component entry in `pathways.json` immediately upgrades that dimension from inferred to ground-truth scoring on the next run, with no code changes required.
+
+---
+
+### Prioritising which gaps to fill first
+
+Not all inference gaps matter equally. The dimensions with the highest weights (D3 and D4, each 20%) cause the most score uncertainty, and inference in those dimensions for high-risk components compounds the problem — an estimated score on a flagged component is precisely where you least want uncertainty.
+
+A practical prioritisation order:
+
+**1. Add `phenotypic_evidence` (D4) for any component currently scored 💀 Critical or 🚫 High Risk.** These are the decisions with the most clinical consequence. If a Critical Gap is based on inferred D4 data, you cannot be confident the gap is real or know how to bridge it. PubMed searches for the component × species combination with terms like "knockout phenotype", "disease model", "transgenic" are the fastest path to structured entries here.
+
+**2. Add `pharmacological_evidence` (D5) for any component that is a known drug target.** CDK4/6, MDM2, and EZH2 all have published preclinical data in multiple model organisms. These entries are straightforward to populate from ChEMBL and the primary literature and immediately raise score precision for the most therapeutically relevant components.
+
+**3. Add `regulatory_context` (D3) for Moderate Risk components where the decision whether to proceed is genuinely ambiguous.** D3 inference is the noisiest — it relies on keyword matching against free text — so Moderate Risk scores are the least reliable outputs in the current system. Structured regulatory context entries for these components will most often resolve ambiguity in a meaningful direction.
+
+**4. Low Risk components at high confidence (very_high D1 conservation + mouse as model species) are lowest priority.** If D1 is 5/5 and the model is mouse, D3–D5 inference is unlikely to change the final risk level.
+
+---
+
+### Data integration architecture
+
+The question of *how* to bring richer data into the scoring system has three answers depending on the use case, update frequency, and data source type. They are not mutually exclusive — the recommended architecture uses all three in combination.
+
+---
+
+#### Option 1: Direct JSON enrichment (structured curation)
+
+**Best for:** Literature-derived phenotypic and pharmacological evidence. PMIDs, experimental results, expert-curated regulatory annotations.
+
+**How it works:** Curators add `phenotypic_evidence`, `pharmacological_evidence`, and `regulatory_context` blocks directly to `pathways.json` following the schemas above. The scoring engine picks them up automatically on the next run.
+
+**Workflow:**
+
+```
+Literature / database search
+         │
+         ▼
+Curator populates structured entry
+(phenotypic_evidence / pharmacological_evidence / regulatory_context)
+         │
+         ▼
+Pull request to pathways.json
+         │
+         ▼
+Schema validation (translational_risk_rubric.json)
+         │
+         ▼
+risk_scorer.py re-run → evidence_tier upgrades to "validated"
+```
+
+**Strengths:** Highest precision. Human-verified. Fully auditable with PMIDs. Version-controlled in git.
+
+**Limitations:** Labour-intensive. Does not scale automatically to new pathways or species. Requires expert judgment for each entry.
+
+**Recommended tools:** Manual curation with a spreadsheet → JSON conversion script, or a lightweight curation interface (Google Form → GitHub Action → PR).
+
+---
+
+#### Option 2: API integration (live data retrieval)
+
+**Best for:** Conservation scores (D1), paralog counts (D2), and expression data (D3 sub-dimension). These data are available from well-maintained public APIs and change infrequently enough that periodic retrieval is practical.
+
+**How it works:** A data enrichment script queries external APIs and writes results into the component entries in `pathways.json`, or into a separate `data/enriched/` layer that the scoring engine reads preferentially over the base annotations.
+
+**Recommended API integrations by dimension:**
+
+| Dimension | Data needed | Recommended API | Endpoint |
+|-----------|-------------|-----------------|---------|
+| D1 — Sequence conservation | % identity, domain coverage | [DIOPT](https://www.flyrnai.org/diopt) | `/api/convert` with BLASTP scores |
+| D1 — Sequence conservation | Structural alignment | [UniProt](https://www.uniprot.org/help/api) | `/uniprotkb/{id}` + BLAST |
+| D2 — Paralog count | Gene family size | [Ensembl](https://rest.ensembl.org) | `/homology/id/{gene_id}` |
+| D3 — Tissue expression | Expression by tissue | [GTEx API](https://gtexportal.org/api/v2) | `/expression/geneExpression` |
+| D3 — Tissue expression | Cross-species expression | [Expression Atlas](https://www.ebi.ac.uk/gxa/api) | `/experiments` |
+| D5 — Drug targets | Approved drug-target pairs | [ChEMBL API](https://www.ebi.ac.uk/chembl/api/data/) | `/target` + `/activity` |
+| D5 — Drug targets | Clinical trial status | [ClinicalTrials.gov API](https://clinicaltrials.gov/api/v2) | `/studies` |
+
+**Example enrichment script skeleton:**
+
+```python
+# data_enricher.py — fetches D1 conservation scores from Ensembl for all components
+import requests, json
+
+ENSEMBL = "https://rest.ensembl.org"
+
+def fetch_paralogs(gene_id: str, species: str) -> list:
+    url = f"{ENSEMBL}/homology/id/{gene_id}"
+    r = requests.get(url, params={"type": "paralogues", "target_species": species},
+                     headers={"Content-Type": "application/json"})
+    r.raise_for_status()
+    return r.json().get("data", [{}])[0].get("homologies", [])
+
+def enrich_component(component: dict, ref_gene_id: str) -> dict:
+    # Fetch paralog count from Ensembl
+    paralogs = fetch_paralogs(ref_gene_id, "homo_sapiens")
+    component["orthologs"]["human"]["paralogs_ensembl"] = [
+        p["target"]["id"] for p in paralogs
+    ]
+    component["orthologs"]["human"]["n_paralogs_ensembl"] = len(paralogs)
+    component["_enriched_at"] = datetime.now().isoformat()
+    return component
+```
+
+**Recommended update cadence:** Run the enrichment script quarterly, or triggered by a GitHub Action when `pathways.json` adds a new component. Pin API response versions where possible (Ensembl release numbers, UniProt accessions) to maintain reproducibility.
+
+**Strengths:** Scalable. Keeps conservation and paralog data current without manual effort. Ensembl and UniProt are authoritative sources.
+
+**Limitations:** API availability and schema stability. Rate limits (Ensembl: 15 req/sec without key). Expression data requires careful tissue-type matching to disease context — this cannot be automated without curation of which tissue is disease-relevant for each component.
+
+---
+
+#### Option 3: RAG over the literature (unstructured evidence retrieval)
+
+**Best for:** D4 (phenotypic validity) and D5 (therapeutic evidence) when structured database entries do not exist — i.e., for newly characterised genes, rare disease models, or unpublished/preprint evidence. Also useful for generating candidate `phenotypic_evidence` entries for curator review before they are formalised into `pathways.json`.
+
+**How it works:** A retrieval-augmented generation system indexes the biomedical literature (PubMed abstracts, full-text open access articles, bioRxiv preprints) and retrieves relevant passages for a given component × species query. A language model then extracts structured evidence — phenotype descriptions, drug response data, rescue experiments — which is presented to curators for validation before being committed to `pathways.json`.
+
+**RAG is a pipeline component here, not a replacement for curation.** The output of the RAG step is a *candidate* structured entry, not a committed score. Every AI-extracted entry carries an `evidence_tier: "ai_candidate"` flag and requires human sign-off before upgrading to `"validated"`.
+
+**Recommended architecture:**
+
+```
+PubMed / bioRxiv / PMC full text
+         │
+         ▼ (nightly index update)
+Vector store (e.g. Chroma, Weaviate, pgvector)
+  — chunked by abstract / section
+  — metadata: PMID, species, gene symbols, MeSH terms
+         │
+         ▼ (on-demand, triggered by new component or flag)
+Retrieval query:
+  "{component_id} {model_species} phenotype model disease knockout"
+         │
+         ▼
+Top-k retrieved passages (k = 10–20)
+         │
+         ▼
+LLM extraction prompt:
+  "From the following passages, extract any experimental evidence
+   of phenotypic equivalence or discordance between {model_species}
+   and human for {component_id}. Return structured JSON matching
+   the phenotypic_evidence schema."
+         │
+         ▼
+Candidate phenotypic_evidence entries (evidence_tier: "ai_candidate")
+         │
+         ▼
+Curator review interface
+         │
+   ┌─────┴─────┐
+   ▼           ▼
+Accept        Reject
+   │
+   ▼
+Committed to pathways.json (evidence_tier: "validated")
+```
+
+**Recommended index sources:**
+
+| Source | Content | Access |
+|--------|---------|--------|
+| [PubMed Central Open Access](https://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_bulk/) | Full text, open access articles | Bulk FTP download |
+| [Europe PMC API](https://europepmc.org/RestfulWebService) | Abstracts + some full text | REST API, no auth |
+| [bioRxiv / medRxiv](https://api.biorxiv.org) | Preprints | REST API |
+| [Semantic Scholar API](https://api.semanticscholar.org) | Abstracts + citation graph | REST API, free key |
+
+**Chunking strategy for biomedical RAG:** Chunk by section (Abstract, Methods, Results, Discussion) rather than fixed token windows. Results sections contain phenotype descriptions; Methods sections contain species and construct details. Keep PMID, gene symbols (from NER or MeSH), and species as chunk metadata for pre-filtering before vector search.
+
+**Strengths:** Can surface evidence for components with no structured database entries. Scales to the full literature without manual reading. Particularly powerful for rare model organisms (worm, zebrafish) where curated databases are less complete.
+
+**Limitations:** LLM extraction is imperfect — phenotype descriptions are ambiguous, species are sometimes unclear, and numerical data (penetrance, effect sizes) is often inconsistently reported. Human validation is non-negotiable before any AI-extracted entry affects a risk score. RAG latency also makes it unsuitable for real-time scoring; treat it as a batch enrichment step.
+
+---
+
+### Recommended integration sequence
+
+For a project at early stage, the most productive order of operations is:
+
+**Phase 1 — Structured curation of priority components** (now → 3 months). Focus on `phenotypic_evidence` (D4) for any component rated 💀 Critical or 🚫 High Risk in the Rb pathway. These are the decisions that matter most and the data is findable in 2–3 PubMed searches per component. Add `pharmacological_evidence` (D5) for CDK4/6, MDM2, and EZH2 from ChEMBL. Run `risk_scorer.py` after each addition and verify that `evidence_tier` upgrades from `"inferred"` to `"validated"`.
+
+**Phase 2 — API enrichment for D1 and D2** (3–6 months). Write `data_enricher.py` to automate Ensembl paralog counts and UniProt conservation scores. Set up a GitHub Action to run enrichment quarterly. This eliminates the main source of D2 inference error (paralog counts currently read from manually maintained arrays in `pathways.json`).
+
+**Phase 3 — RAG pipeline for D4/D5 at scale** (6–12 months). Once the curation workflow is established and you understand what good `phenotypic_evidence` entries look like, set up a RAG pipeline to generate candidates for the Notch, Wnt, and Hedgehog pathways. Use Europe PMC as the primary index. Route all AI-extracted candidates through the curator review step before they touch `pathways.json`.
+
+**Phase 4 — Live API integration for D3 expression data** (12+ months). Tissue-specific expression matching is the hardest dimension to automate because it requires knowing which tissue is disease-relevant for each component — a judgment call that changes by cancer subtype. Build this only after the curation vocabulary is stable enough to define tissue-relevance rules programmatically.
+
+---
+
+### Summary: inference flags at a glance
+
+| Signal | Location | Meaning | Fix |
+|--------|----------|---------|-----|
+| `"evidence_tier": "inferred"` | JSON output record | ≥1 dimension is estimated | Add structured entries to `pathways.json` |
+| `"Regulatory context score derived from..."` | D3 rationale field | No `regulatory_context` block | Add `regulatory_context` entry |
+| `"Phenotypic validity estimated from..."` | D4 rationale field | No `phenotypic_evidence` array | Add `phenotypic_evidence` entries with PMIDs |
+| `"Therapeutic evidence estimated from..."` | D5 rationale field | No `pharmacological_evidence` array | Add `pharmacological_evidence` from ChEMBL |
+| `"Legacy risk rating: {low\|moderate\|high}"` | D4 rationale field | Score bootstrapped from old single-value field | Replace with structured evidence array |
+| `"For precise scoring, add ... entries"` | Any rationale field | Explicit curator prompt | Targeted curation action |
+
+---
+
 ## Extending the Pipeline
 
 **Adding a new pathway** — add a new entry to `config/pathways.json` following the existing structure. The pipeline picks it up automatically with `--pathway all`.
