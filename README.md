@@ -1,5 +1,7 @@
 # 🪰 Who Gives a Fly?
 
+Project Team: Brian M. Green, Sarah Burke, and Adam Wenocur, at Bits in Bio, Show and Tell 2026, Feb. 21, 2026.
+
 > *Bridging the valley of death in translational medicine through cross-species pathway mapping.*
 
 ---
