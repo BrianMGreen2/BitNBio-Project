@@ -1,0 +1,155 @@
+{
+  "rubric_metadata": {
+    "rubric_id":    "translational_risk_rubric",
+    "version":      "1.0.0",
+    "last_updated": "2026-02-21",
+    "authors":      ["Who Gives a Fly Team"],
+    "intended_use": "Scoring translational risk for pathway components across model organism / human comparisons",
+    "reference_species": "human",
+    "cite_as": "Who Gives a Fly: Cross-Species Pathway Mapping for Translational Medicine (2025)"
+  },
+
+  "dimensions": {
+    "D1_sequence_conservation": {
+      "weight": 0.30,
+      "label": "Sequence Conservation",
+      "description": "How similar is the model organism protein to the human protein at the sequence and structural level?",
+      "levels": {
+        "5": { "label": "Very High",    "min_identity": 0.90, "criteria": "≥90% protein identity; all functional domains present and conserved; active-site residues identical.", "risk_contribution": "low" },
+        "4": { "label": "High",         "min_identity": 0.70, "criteria": "70–89% identity; all major functional domains present; minor divergence in regulatory regions.", "risk_contribution": "low" },
+        "3": { "label": "Moderate",     "min_identity": 0.45, "criteria": "45–69% identity; core functional domain conserved; diverged termini or regulatory motifs.", "risk_contribution": "moderate" },
+        "2": { "label": "Low",          "min_identity": 0.20, "criteria": "20–44% identity; functional domain recognisable but diverged; ortholog may rely on synteny data.", "risk_contribution": "high" },
+        "1": { "label": "Very Low",     "min_identity": 0.01, "criteria": "<20% identity; structural homology only; functional equivalence requires experimental validation.", "risk_contribution": "high" },
+        "0": { "label": "Absent",       "min_identity": 0.00, "criteria": "No identifiable ortholog or structural homolog.", "risk_contribution": "critical" }
+      },
+      "auto_score_rule": "Map conservation_score float: ≥0.90→5, ≥0.70→4, ≥0.45→3, ≥0.20→2, >0.00→1, 0.00→0",
+      "caveats": [
+        "High sequence identity does not guarantee functional equivalence if regulatory motifs differ.",
+        "Low identity does not preclude functional conservation, especially for scaffold proteins.",
+        "Assess domain-by-domain for multi-domain proteins."
+      ]
+    },
+
+    "D2_paralog_complexity": {
+      "weight": 0.20,
+      "label": "Paralog Complexity",
+      "description": "How does gene family size and redundancy in the model organism compare to human?",
+      "levels": {
+        "5": { "label": "Equivalent",       "delta_paralogs": 0, "criteria": "Same number of paralogs; equivalent expression and function; no known compensation.", "risk_contribution": "low" },
+        "4": { "label": "Minor mismatch",   "delta_paralogs": 1, "criteria": "±1 paralog difference; missing paralog has non-overlapping expression; compensation unlikely.", "risk_contribution": "low" },
+        "3": { "label": "Moderate mismatch","delta_paralogs": 3, "criteria": "2–3 paralog difference; functional overlap known; model may under/over-represent pathway activity.", "risk_contribution": "moderate" },
+        "2": { "label": "Major mismatch",   "delta_paralogs": 5, "criteria": "Human has ≥3 extra paralogs; model cannot distinguish isoform-specific biology.", "risk_contribution": "high" },
+        "1": { "label": "Single vs family", "delta_paralogs": 99,"criteria": "Model has 1 gene where human has ≥4 members with distinct tissue/disease roles.", "risk_contribution": "high" },
+        "0": { "label": "No homolog",       "delta_paralogs": -1,"criteria": "No paralog or functional analog for a human gene family member critical to the pathway.", "risk_contribution": "critical" }
+      },
+      "caveats": [
+        "Fewer paralogs in model can be an advantage for clean phenotypes but limits isoform-specific drug target modelling.",
+        "Zebrafish whole-genome duplication often produces MORE paralogs than human — assess subfunctionalisation.",
+        "Mouse paralog compensation during development can mask somatic phenotypes relevant to cancer."
+      ]
+    },
+
+    "D3_regulatory_context": {
+      "weight": 0.20,
+      "label": "Regulatory Context",
+      "description": "Are upstream regulators, downstream effectors, PTM sites, and tissue expression contexts conserved?",
+      "sub_dimensions": {
+        "upstream_inputs":    { "weight": 0.25, "description": "Activating signals and upstream kinases/ligands conserved?" },
+        "downstream_outputs": { "weight": 0.25, "description": "Same target genes respond downstream?" },
+        "ptm_conservation":   { "weight": 0.25, "description": "Key phosphorylation, ubiquitination, SUMOylation sites present?" },
+        "tissue_expression":  { "weight": 0.25, "description": "Gene expressed in disease-relevant tissue equivalent?" }
+      },
+      "levels": {
+        "5": { "label": "Fully conserved",       "criteria": "All regulatory connections conserved; PTM sites identical; tissue expression equivalent; no rewiring.", "risk_contribution": "low" },
+        "4": { "label": "Largely conserved",     "criteria": "Core regulatory connections conserved; ≤1 minor PTM site differs; tissue expression broadly equivalent.", "risk_contribution": "low" },
+        "3": { "label": "Partially conserved",   "criteria": "Major connections present but rewiring documented; key PTM absent; tissue expression partially overlapping.", "risk_contribution": "moderate" },
+        "2": { "label": "Substantially diverged","criteria": "Upstream or downstream connections substantially different; important PTM absent; expressed in different disease-relevant tissue.", "risk_contribution": "high" },
+        "1": { "label": "Largely diverged",      "criteria": "Regulatory context mostly non-equivalent; different upstream activators and/or target genes.", "risk_contribution": "high" },
+        "0": { "label": "Completely diverged",   "criteria": "No meaningful regulatory conservation. Gene embedded in fundamentally different pathway context.", "risk_contribution": "critical" }
+      },
+      "caveats": [
+        "TGF-β → p15^INK4b is a mammalian-specific input absent in fly — score 1 for fly, 5 for mouse.",
+        "Use disease-relevant tissue expression data, not whole-organism RNA-seq.",
+        "Regulatory rewiring can be tissue-specific."
+      ]
+    },
+
+    "D4_phenotypic_validity": {
+      "weight": 0.20,
+      "label": "Phenotypic Validity",
+      "description": "Has the model organism experimentally recapitulated the human phenotype when the gene is manipulated?",
+      "levels": {
+        "5": { "label": "Fully validated",        "criteria": "Equivalent disease phenotype; human gene rescues model; drug response concordant in ≥2 studies.", "risk_contribution": "low" },
+        "4": { "label": "Substantially validated","criteria": "Key disease phenotype recapitulated; rescue OR drug concordance shown; minor phenotypic differences.", "risk_contribution": "low" },
+        "3": { "label": "Partially validated",    "criteria": "Some overlap with human disease; model published with caveats; rescue not tested.", "risk_contribution": "moderate" },
+        "2": { "label": "Limited validation",     "criteria": "Model gene manipulated but phenotype only partially mirrors human; significant differences in tissue or penetrance.", "risk_contribution": "high" },
+        "1": { "label": "Predicted only",         "criteria": "No published disease model; equivalence inferred from sequence homology or pathway membership alone.", "risk_contribution": "high" },
+        "0": { "label": "Contradicted",           "criteria": "Experimental evidence shows model does NOT recapitulate human phenotype, or produces opposite effect.", "risk_contribution": "critical" }
+      },
+      "caveats": [
+        "Rb1 KO mouse is embryonic lethal — phenotypically diverges from human RB1 loss despite high sequence conservation. Scores 3, not 5.",
+        "Distinguish developmental vs somatic disease models — a developmental phenotype may not predict adult cancer biology.",
+        "Drug response concordance with ≥2 approved drugs is the strongest evidence available."
+      ]
+    },
+
+    "D5_therapeutic_evidence": {
+      "weight": 0.10,
+      "label": "Therapeutic Evidence",
+      "description": "Does drug/intervention response in the model organism predict human therapeutic outcomes?",
+      "levels": {
+        "5": { "label": "Clinical concordance", "criteria": "Approved drug target; model drug response predicts human clinical outcomes; biomarker validated in both.", "risk_contribution": "low" },
+        "4": { "label": "Strong preclinical",   "criteria": "Drug active in model with confirmed mechanism; compound in clinical trials.", "risk_contribution": "low" },
+        "3": { "label": "Preclinical evidence", "criteria": "Drug active in model; mechanism plausible but unconfirmed; no clinical data yet or mixed outcomes.", "risk_contribution": "moderate" },
+        "2": { "label": "Limited evidence",     "criteria": "Drug active in model but mechanism unclear; or known discordance between model and human drug response.", "risk_contribution": "high" },
+        "1": { "label": "No drug data",         "criteria": "No pharmacological data available for this component in this model organism.", "risk_contribution": "high" },
+        "0": { "label": "Discordant",           "criteria": "Drug active in model but fails in humans for this target; or human drug inactive in model.", "risk_contribution": "critical" }
+      },
+      "caveats": [
+        "CDK4/6 inhibitors only work in RB1-intact tumours — a model lacking p16 but with intact Rb1 may falsely predict sensitivity.",
+        "Absence of drug data (score 1) is not evidence of failure.",
+        "Drug concordance for one species pair does not automatically transfer to other species comparisons."
+      ]
+    }
+  },
+
+  "aggregation": {
+    "method": "weighted_sum_with_overrides",
+    "formula": "composite = (D1*0.30 + D2*0.20 + D3*0.20 + D4*0.20 + D5*0.10) / 5.0",
+    "normalisation": "Each dimension score (0–5) divided by 5 before weighting.",
+
+    "override_rules": [
+      { "rule_id": "OR-01", "condition": "D1 == 0", "override_to": "critical", "rationale": "No homolog means the component cannot be modelled at all. Composite score is meaningless." },
+      { "rule_id": "OR-02", "condition": "D4 == 0", "override_to": "high",     "rationale": "Experimental evidence of non-equivalence overrides positive sequence or regulatory scores." },
+      { "rule_id": "OR-03", "condition": "D5 == 0", "override_to": "high",     "rationale": "Known drug discordance between model and human is a direct translational failure signal." },
+      { "rule_id": "OR-04", "condition": "D2 == 0 AND D1 <= 2", "override_to": "critical", "rationale": "No homolog AND low sequence similarity: component functionally absent in model." },
+      { "rule_id": "OR-05", "condition": "D3 <= 1 AND D4 <= 1", "override_to": "high",     "rationale": "Both regulatory context and phenotypic evidence indicate non-equivalence." }
+    ],
+
+    "modifier_rules": [
+      { "rule_id": "MR-01", "condition": "Human gene rescue demonstrated",               "modifier": 0.10,  "rationale": "Human gene rescue is the gold standard of functional conservation." },
+      { "rule_id": "MR-02", "condition": "Drug concordance validated in ≥2 studies",     "modifier": 0.08,  "rationale": "Replicated pharmacological concordance is strong translational validation." },
+      { "rule_id": "MR-03", "condition": "Tissue expression mismatch for disease tissue", "modifier": -0.10, "rationale": "Even conserved genes not expressed in disease-relevant tissue cannot model disease." },
+      { "rule_id": "MR-04", "condition": "Zebrafish WGD subfunctionalised paralogs",     "modifier": -0.08, "rationale": "Zebrafish WGD paralogs often subfunctionalised — one paralog may not cover full human function." },
+      { "rule_id": "MR-05", "condition": "Convergent evolution evidence",                "modifier": -0.12, "rationale": "Convergent phenotype can mislead — drug mechanism may not apply to human." }
+    ]
+  },
+
+  "final_risk_thresholds": {
+    "low":      { "composite_min": 0.75, "composite_max": 1.00, "label": "Low Risk",      "icon": "✅", "color": "#2d6a4f", "action": "Model organism findings are likely to translate. Proceed with confidence; document assumptions." },
+    "moderate": { "composite_min": 0.50, "composite_max": 0.74, "label": "Moderate Risk", "icon": "⚠️", "color": "#f4a261", "action": "Translate with caution. Identify divergent dimensions and design bridging experiments before clinical development." },
+    "high":     { "composite_min": 0.25, "composite_max": 0.49, "label": "High Risk",     "icon": "🚫", "color": "#e76f51", "action": "Significant translational gap. Do not extrapolate without orthogonal validation in a higher-fidelity model or human cell system." },
+    "critical": { "composite_min": 0.00, "composite_max": 0.24, "label": "Critical Gap",  "icon": "💀", "color": "#d62828", "action": "Do not extrapolate. Use an alternative model or human-derived system (organoids, iPSCs, patient samples)." }
+  },
+
+  "flags": {
+    "no_homolog":                     { "trigger": "D1 == 0",                               "message": "No ortholog identified. Component cannot be directly studied in this model.", "severity": "critical" },
+    "paralog_compensation_risk":      { "trigger": "D2 <= 2 AND compensation_evidence",     "message": "Paralog compensation documented. Loss-of-function phenotype may be masked.", "severity": "high" },
+    "tissue_expression_mismatch":     { "trigger": "expression_overlap < 0.4",              "message": "Gene not expressed in model tissue equivalent to human disease tissue.", "severity": "high" },
+    "ptm_site_absent":                { "trigger": "key_ptm_sites_conserved == false",      "message": "Key PTM sites absent. Phosphorylation-dependent drug mechanisms may not apply.", "severity": "moderate" },
+    "regulatory_rewiring":            { "trigger": "known_regulatory_rewiring == true",     "message": "Documented regulatory rewiring. Drug acting on inputs may have different efficacy.", "severity": "moderate" },
+    "developmental_vs_somatic_mismatch": { "trigger": "model_timing != human_timing",      "message": "Developmental model; human disease is somatic (or vice versa).", "severity": "moderate" },
+    "drug_discordance":               { "trigger": "D5 == 0",                               "message": "Known drug discordance. Do not use this model for therapeutic screening of this target.", "severity": "critical" },
+    "wgd_paralog_risk":               { "trigger": "zebrafish AND n_model_paralogs > n_human_paralogs", "message": "Zebrafish WGD extra paralogs — assess subfunctionalisation.", "severity": "moderate" }
+  }
+}
