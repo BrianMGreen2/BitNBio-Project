@@ -799,6 +799,81 @@ The `--approve` command does three things automatically: validates the draft aga
 
 ---
 
+---
+
+### Curator review and evidence quality standards
+
+Schema validation (`--entry`) checks that an evidence entry is well-formed. It does not check whether the score assigned is scientifically justified. Those are different questions, and until recently only the first one was enforced.
+
+The `--review` command addresses the second. It runs the entry through a set of scientific consistency checks — score-to-evidence gates — before approval is permitted. The full curation workflow is now:
+
+```bash
+# 1. Generate a blank template
+python validate_evidence.py --template rb1 --pathway rb_pathway \
+  --species drosophila mouse --output rb1_evidence.json
+
+# 2. Fill in the template, then check structure
+python validate_evidence.py --entry rb1_evidence.json --component rb1
+
+# 3. Check scientific consistency — score-evidence gates
+python validate_evidence.py --review rb1_evidence.json --component rb1
+
+# 4. Fix any errors, then approve
+python validate_evidence.py --approve rb1_evidence.json \
+  --component rb1 --curator "J.Smith"
+
+# 4a. If only warnings remain and they have been addressed manually:
+python validate_evidence.py --approve rb1_evidence.json \
+  --component rb1 --curator "J.Smith" --override-warnings
+```
+
+`--review` runs before `--approve` automatically. An entry with unresolved errors cannot be merged into `pathways.json` regardless of other flags.
+
+#### What the review checks
+
+The review engine applies 14 consistency rules across three categories. **Errors** block approval. **Warnings** block approval unless `--override-warnings` is passed. **Info** items are advisory only.
+
+The most important score-gating rules are:
+
+| Code | Severity | Condition | Required action |
+|------|----------|-----------|----------------|
+| W-S01 | Error | Score ≥4 with no PMID | Add PMID or reduce score |
+| W-S02 | Warning | D4 score = 5 with no rescue entry | Add `evidence_type: "rescue"` entry or reduce to 4 |
+| W-S03 | Error | D4 score ≥4 with `evidence_type: "in_vitro"` | In vitro caps D4 at 3 |
+| W-S04 | Warning | D4 score = 5 with only one unique PMID across the block | Score 5 requires replication — add second source |
+| W-S05 | Error | D5 score ≥4 with `concordance` not `true` | Concordance must be directly established |
+| W-S06 | Error | D5 score ≥4 with `evidence_type: "in_vitro"` | In vitro caps D5 at 2 |
+| W-S07 | Error | `concordance: true` with no PMID | Cannot verify without source |
+| W-S08 | Error | `evidence_type: "drug_screen"` with score ≥3 | Screen hits cap at 2 until mechanism confirmed |
+| W-C01 | Error | Contradicting entries outnumber supporting | Composite D4 score should not exceed 2 |
+| W-C02 | Warning | Contradiction present alongside score ≥3 without explanation | Document why contradiction does not invalidate support |
+| W-C03 | Warning | `known_rewiring: true` in D3 with empty `notes` | Describe the specific rewiring event |
+| W-N01 | Warning | D4 score ≤3 with empty `caveats` | Low-to-moderate scores reflect known limitations — document them |
+| W-N03 | Warning | `description` fewer than 30 characters | Insufficient to verify score independently |
+
+The practical effect of these rules is that score inflation from thin evidence is caught mechanically rather than relying on the curator to remember the criteria. An entry with `score: 5, pmid: null, description: "KO works."` passes schema validation but produces one error (W-S01) and three warnings (W-S02, W-S04, W-N03), and `--approve` is refused.
+
+#### Scores curators assign vs scores the rules enforce
+
+The gap between W-S01 (no PMID → score must be ≤3) and the rubric's D4 level descriptors (score 3 = "partially validated, model published with caveats") is intentional. The rules define the *floor* of evidence required to justify each score. The rubric defines what each score *means*. A score of 3 with two solid PMIDs is correctly rated; a score of 3 with no PMID triggers a warning, not an error, because unpublished evidence in a well-understood system can sometimes be appropriate — but it requires the curator to explicitly acknowledge the limitation.
+
+The distinction between errors and warnings encodes confidence in the rule: things the system is certain are wrong (no PMID for a score of 5, in vitro evidence for a score of 4) are errors. Things the system is uncertain about — situations that are unusual but not always wrong — are warnings that require human judgment to override.
+
+#### The curator review guide
+
+The full decision criteria, gate-by-gate reasoning, and worked examples for each evidence type are documented in `CURATOR_REVIEW_GUIDE.md`. This document should be read before committing any evidence entry and covers:
+
+- The evidence gate hierarchy for D4 (publication status → experimental system → phenotype match → rescue → replication)
+- The concordance distinction for D5 (direct comparison vs circumstantial co-occurrence of model efficacy and clinical approval)
+- The four D3 sub-dimension questions and how to synthesise them into a score
+- Cross-cutting rules that apply to all evidence types (the single-source rule, the contradiction rule, the null fields rule)
+- Four worked examples: Rb1 KO mouse (D4 score 3), human RB1 rescue (D4 score 5), palbociclib in fly (D5 score 2), nutlin-3a discordance (D5 score 0)
+- The printable curator checklist for pre-approval review
+
+When in doubt about a score, the guide's core principle applies: *assign the strongest defensible score the weakest piece of evidence permits.* Uncertainty belongs in the risk assessment, not hidden in an inflated score.
+
+---
+
 ### `data_enricher.py`
 
 Automates the API-sourced portion of enrichment. Queries Ensembl (homologs and paralogs), UniProt (sequence data), ChEMBL (approved drug targets and activity records), and GTEx (tissue-specific expression) for each pathway component. Results are written to `data/enriched/` — never directly to `pathways.json` — so API data and curator data are always kept separate.
