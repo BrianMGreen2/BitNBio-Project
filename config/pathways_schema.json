@@ -1,0 +1,190 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://whogivesafly.org/schemas/pathways_schema.json",
+  "title": "Who Gives a Fly — Pathways Database Schema",
+  "description": "Validates pathways.json structure (pathways, components, orthologs, conservation, translational risk). Designed to be compatible with validate_evidence.py (evidence blocks optional).",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["metadata", "pathways"],
+  "properties": {
+    "metadata": { "$ref": "#/definitions/metadata" },
+    "pathways": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/pathway" }
+    }
+  },
+  "additionalProperties": false,
+
+  "definitions": {
+    "id_slug": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Lowercase slug id used for pathway/component ids (e.g., rb_pathway, cdk4_6)."
+    },
+
+    "risk_level": {
+      "type": "string",
+      "enum": ["low", "moderate", "high", "unknown"],
+      "description": "Translational risk tier used by coverage_report sorting."
+    },
+
+    "species_id": {
+      "type": "string",
+      "enum": ["human", "mouse", "drosophila", "zebrafish", "worm"]
+    },
+
+    "species_meta": {
+      "type": "object",
+      "required": ["common_name", "latin_name", "abbreviation", "genome_db", "taxon_id"],
+      "properties": {
+        "common_name": { "type": "string" },
+        "latin_name": { "type": "string" },
+        "abbreviation": { "type": "string" },
+        "genome_db": { "type": "string" },
+        "taxon_id": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+
+    "metadata": {
+      "type": "object",
+      "required": ["version", "project", "description", "species"],
+      "properties": {
+        "version": { "type": "string" },
+        "project": { "type": "string" },
+        "description": { "type": "string" },
+        "species": {
+          "type": "object",
+          "required": ["human", "mouse", "drosophila", "zebrafish", "worm"],
+          "properties": {
+            "human": { "$ref": "#/definitions/species_meta" },
+            "mouse": { "$ref": "#/definitions/species_meta" },
+            "drosophila": { "$ref": "#/definitions/species_meta" },
+            "zebrafish": { "$ref": "#/definitions/species_meta" },
+            "worm": { "$ref": "#/definitions/species_meta" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "ortholog_entry": {
+      "type": "object",
+      "required": ["symbol", "full_name", "paralogs"],
+      "properties": {
+        "symbol": { "type": "string" },
+        "full_name": { "type": "string" },
+        "paralogs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "disease": { "type": "string" },
+        "omim": { "type": "string" },
+        "ensembl_id": { "type": "string" },
+        "gencode_id": { "type": "string" },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+
+    "conservation_entry": {
+      "type": "object",
+      "required": ["score", "level", "notes"],
+      "properties": {
+        "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "level": {
+          "type": "string",
+          "enum": ["absent", "low", "moderate", "high", "very_high"]
+        },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+
+    "component": {
+      "type": "object",
+      "required": ["id", "role", "function", "is_core", "orthologs", "conservation", "translational_risk"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id_slug" },
+        "role": { "type": "string" },
+        "function": { "type": "string" },
+        "is_core": { "type": "boolean" },
+
+        "orthologs": {
+          "type": "object",
+          "required": ["human", "mouse", "drosophila", "zebrafish", "worm"],
+          "properties": {
+            "human": { "$ref": "#/definitions/ortholog_entry" },
+            "mouse": { "$ref": "#/definitions/ortholog_entry" },
+            "drosophila": { "$ref": "#/definitions/ortholog_entry" },
+            "zebrafish": { "$ref": "#/definitions/ortholog_entry" },
+            "worm": { "$ref": "#/definitions/ortholog_entry" }
+          },
+          "additionalProperties": false
+        },
+
+        "conservation": {
+          "type": "object",
+          "description": "Keyed by species pairs such as human_mouse, human_drosophila, etc.",
+          "patternProperties": {
+            "^(human|mouse|drosophila|zebrafish|worm)_(human|mouse|drosophila|zebrafish|worm)$": {
+              "$ref": "#/definitions/conservation_entry"
+            }
+          },
+          "additionalProperties": false
+        },
+
+        "translational_risk": { "$ref": "#/definitions/risk_level" },
+        "translational_notes": { "type": "string" },
+
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+
+        "regulatory_context": {
+          "description": "Optional evidence block (validated separately by validate_evidence.py when present).",
+          "type": ["object", "null"],
+          "additionalProperties": true
+        },
+        "phenotypic_evidence": {
+          "description": "Optional evidence block (validated separately by validate_evidence.py when present).",
+          "type": ["array", "null"],
+          "items": { "type": "object" }
+        },
+        "pharmacological_evidence": {
+          "description": "Optional evidence block (validated separately by validate_evidence.py when present).",
+          "type": ["array", "null"],
+          "items": { "type": "object" }
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "pathway": {
+      "type": "object",
+      "required": ["id", "name", "description", "tags", "components"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id_slug" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "disease_relevance": { "type": "string" },
+        "omim": { "type": "string" },
+        "kegg": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/component" }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
