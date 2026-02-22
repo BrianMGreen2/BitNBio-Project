@@ -32,6 +32,7 @@ class DimensionScore:
     raw:       int          # 0–5
     rationale: str
     dimension: str
+    scored_by: str = "inferred"   # "ground_truth" | "enriched" | "inferred"
 
     @property
     def normalised(self) -> float:
@@ -82,6 +83,24 @@ class RiskAssessment:
 
     evidence_references: list = field(default_factory=list)
 
+
+
+def _compute_evidence_tier(*dims) -> str:
+    """
+    Compute record-level evidence_tier from all dimension scored_by values.
+    - "validated"  : all inferred-mode dims are D1 or D2 (sequence/paralogs — less critical)
+                     AND at least one of D3/D4/D5 is ground_truth or enriched
+    - "partial"    : mix of inferred and ground_truth/enriched across D3/D4/D5
+    - "inferred"   : D3, D4, and D5 are all inferred
+    """
+    critical_dims = [d for d in dims if d.dimension in ("D3", "D4", "D5")]
+    tiers = set(d.scored_by for d in critical_dims)
+    if all(t == "inferred" for t in (d.scored_by for d in critical_dims)):
+        return "inferred"
+    if all(t in ("validated", "ground_truth", "enriched")
+           for t in (d.scored_by for d in critical_dims)):
+        return "validated"
+    return "partial"
 
 # ─────────────────────────────────────────────────────────
 # Scoring engine
@@ -213,57 +232,100 @@ class TranslationalRiskScorer:
 
     def score_D3(self, component: dict, ref: str, compare: str) -> DimensionScore:
         """
-        Inferred from conservation level + species-specific notes.
-        Full implementation requires explicit regulatory_context entries
-        in pathways.json; this version derives an estimate from available data.
+        Scores D3 from structured regulatory_context block if present (ground truth),
+        otherwise infers from conservation level and free-text notes.
         """
         key     = f"{ref}_{compare}"
         alt_key = f"{compare}_{ref}"
+
+        # ── Ground-truth path ──────────────────────────────────────────────
+        reg_ctx = component.get("regulatory_context", {})
+        entry   = reg_ctx.get(key) or reg_ctx.get(alt_key)
+        if entry and entry.get("evidence_tier") in ("validated", "enriched"):
+            score = entry.get("score", 0)
+            notes_text = entry.get("notes", "")
+            tier  = entry.get("evidence_tier", "validated")
+            rationale = (
+                f"[{tier.upper()}] Regulatory context scored from structured entry. "
+                f"Upstream conserved: {entry.get('upstream_inputs_conserved')}. "
+                f"Downstream conserved: {entry.get('downstream_targets_conserved')}. "
+                f"PTM sites conserved: {entry.get('ptm_sites_conserved')}. "
+                f"Tissue expression overlap: {entry.get('tissue_expression_overlap')}. "
+                f"Known rewiring: {entry.get('known_rewiring')}. "
+                f"{notes_text}"
+            )
+            return DimensionScore(raw=score, rationale=rationale,
+                                  dimension="D3", scored_by=tier)
+
+        # ── Inference fallback ─────────────────────────────────────────────
         cons    = component.get("conservation", {})
         data    = cons.get(key) or cons.get(alt_key) or {}
         level   = data.get("level", "absent")
         notes   = data.get("notes", "").lower()
         comp_note = component.get("orthologs", {}).get(compare, {}).get("note", "").lower()
 
-        # Start from D1-derived baseline and apply regulatory adjustments
         base = self.CONSERVATION_LEVEL_TO_D1.get(level, 0)
 
-        # Signals of regulatory conservation
         if any(w in notes for w in ["regulatory", "fully conserved", "equivalent pathway"]):
             base = min(base + 1, 5)
         if any(w in notes for w in ["conserved pathway", "same upstream", "identical"]):
             base = min(base + 1, 5)
-
-        # Signals of regulatory divergence
         if any(w in notes for w in ["rewiring", "different upstream", "absent regulatory", "no tgf", "no ink4"]):
             base = max(base - 2, 0)
         if any(w in comp_note for w in ["different tissue", "no equivalent", "absent in", "not present"]):
             base = max(base - 1, 0)
         if "no true" in comp_note or "no clear" in comp_note:
             base = max(base - 2, 0)
-
-        # Species-specific known penalties
         if compare == "drosophila":
             if "ink4" in component["id"].lower():
-                base = 0  # No INK4 regulatory context in fly at all
+                base = 0
             if "tgf" in notes or "tgf" in comp_note:
                 base = max(base - 2, 0)
 
         rationale = (
-            f"Regulatory context score derived from conservation level ({level}) "
+            f"[INFERRED] Regulatory context derived from conservation level ({level}) "
             f"and species-specific notes. "
-            f"Note: Full regulatory scoring requires explicit regulatory_context "
-            f"entries in pathways.json."
+            f"Add a 'regulatory_context.{key}' block to pathways.json to enable ground-truth scoring."
         )
-        return DimensionScore(raw=base, rationale=rationale, dimension="D3")
+        return DimensionScore(raw=base, rationale=rationale,
+                              dimension="D3", scored_by="inferred")
 
     # ── D4: Phenotypic validity ────────────────────────────
 
     def score_D4(self, component: dict, ref: str, compare: str) -> DimensionScore:
         """
-        Derived from translational_notes and species ortholog notes.
-        Full implementation requires explicit phenotypic_evidence entries.
+        Scores D4 from structured phenotypic_evidence entries if present (ground truth),
+        otherwise infers from translational_notes and ortholog annotations.
         """
+        # ── Ground-truth path ──────────────────────────────────────────────
+        pheno_entries = [
+            e for e in component.get("phenotypic_evidence", [])
+            if e.get("model_species") == compare
+            and e.get("evidence_tier") in ("validated", "enriched")
+        ]
+        if pheno_entries:
+            # Score = max of individual evidence scores; flag contradictions
+            supporting   = [e for e in pheno_entries if e.get("supports_validity", True)]
+            contradicting = [e for e in pheno_entries if not e.get("supports_validity", True)]
+            if contradicting and not supporting:
+                score = 0
+            else:
+                score = max((e.get("score", 0) for e in supporting), default=1)
+                if contradicting:
+                    score = max(score - 1, 1)  # Penalise contradicting evidence
+            pmids = [e.get("pmid") for e in pheno_entries if e.get("pmid")]
+            tier  = pheno_entries[0].get("evidence_tier", "validated")
+            rationale = (
+                f"[{tier.upper()}] Phenotypic validity scored from {len(pheno_entries)} structured "
+                f"evidence {'entry' if len(pheno_entries)==1 else 'entries'} "
+                f"({len(supporting)} supporting, {len(contradicting)} contradicting). "
+                f"PMIDs: {', '.join(pmids) if pmids else 'none'}. "
+                f"Evidence types: {', '.join(set(e.get('evidence_type','?') for e in pheno_entries))}."
+            )
+            return DimensionScore(raw=score, rationale=rationale,
+                                  dimension="D4", scored_by=tier)
+
+        # ── Inference fallback ─────────────────────────────────────────────
         t_risk  = component.get("translational_risk", "moderate")
         t_notes = component.get("translational_notes", "").lower()
         comp_note = component.get("orthologs", {}).get(compare, {}).get("note", "").lower()
@@ -299,24 +361,59 @@ class TranslationalRiskScorer:
             score = max(score, 3)
 
         rationale = (
-            f"Phenotypic validity estimated from translational notes and "
+            f"[INFERRED] Phenotypic validity estimated from translational notes and "
             f"ortholog-specific annotations for {compare}. "
             f"Legacy risk rating: {t_risk}. "
-            f"For precise scoring, add phenotypic_evidence entries to pathways.json."
+            f"Add 'phenotypic_evidence' entries for {compare} to pathways.json to enable ground-truth scoring."
         )
-        return DimensionScore(raw=score, rationale=rationale, dimension="D4")
+        return DimensionScore(raw=score, rationale=rationale,
+                              dimension="D4", scored_by="inferred")
 
     # ── D5: Therapeutic evidence ───────────────────────────
 
     def score_D5(self, component: dict, ref: str, compare: str) -> DimensionScore:
         """
-        Derived from disease annotations and translational notes.
+        Scores D5 from structured pharmacological_evidence entries if present (ground truth),
+        otherwise infers from disease annotations and translational notes.
         """
+        # ── Ground-truth path ──────────────────────────────────────────────
+        pharm_entries = [
+            e for e in component.get("pharmacological_evidence", [])
+            if e.get("model_species") == compare
+            and e.get("evidence_tier") in ("validated", "enriched")
+        ]
+        if pharm_entries:
+            concordant   = [e for e in pharm_entries if e.get("concordance") is True]
+            discordant   = [e for e in pharm_entries if e.get("concordance") is False]
+            unknown      = [e for e in pharm_entries if e.get("concordance") is None]
+
+            if discordant and not concordant:
+                score = 0   # Override OR-03 will also fire
+            else:
+                score = max((e.get("score", 1) for e in concordant), default=1)
+                if discordant:
+                    score = max(score - 1, 1)
+
+            pmids = [e.get("pmid") for e in pharm_entries if e.get("pmid")]
+            drugs = list(set(e.get("drug", "") for e in pharm_entries if e.get("drug")))
+            tier  = pharm_entries[0].get("evidence_tier", "validated")
+            stages = list(set(e.get("clinical_stage") for e in pharm_entries if e.get("clinical_stage")))
+            rationale = (
+                f"[{tier.upper()}] Therapeutic evidence from {len(pharm_entries)} structured "
+                f"{'entry' if len(pharm_entries)==1 else 'entries'} "
+                f"({len(concordant)} concordant, {len(discordant)} discordant, {len(unknown)} unknown). "
+                f"Drugs: {', '.join(drugs[:3]) if drugs else 'none'}. "
+                f"Clinical stages: {', '.join(stages) if stages else 'not specified'}. "
+                f"PMIDs: {', '.join(pmids) if pmids else 'none'}."
+            )
+            return DimensionScore(raw=score, rationale=rationale,
+                                  dimension="D5", scored_by=tier)
+
+        # ── Inference fallback ─────────────────────────────────────────────
         ref_orth  = component.get("orthologs", {}).get(ref, {})
         t_notes   = component.get("translational_notes", "").lower()
         disease   = ref_orth.get("disease", "").lower()
 
-        # Approved drug targets score well
         if any(w in disease for w in ["approved", "fda"]):
             score = 5
         elif any(w in t_notes for w in ["fda-approved", "approved drug", "cdk4/6 inhibitor", "palbociclib"]):
@@ -326,26 +423,24 @@ class TranslationalRiskScorer:
         elif any(w in t_notes for w in ["drug screen", "preclinical"]):
             score = 2
         elif t_notes == "" and disease == "":
-            score = 1  # No data
+            score = 1
         else:
-            score = 2  # Some context but no clear drug evidence
+            score = 2
 
-        # Known discordance
         if any(w in t_notes for w in ["discordant", "fails in human", "not translate"]):
             score = 0
-
-        # Species-specific penalties
         if compare == "drosophila" and "do not use" in t_notes:
             score = max(score - 1, 1)
         if compare == "worm" and score > 2:
-            score = 2  # Worm therapeutic evidence generally limited
+            score = 2
 
         rationale = (
-            f"Therapeutic evidence estimated from disease annotations and translational notes. "
+            f"[INFERRED] Therapeutic evidence estimated from disease annotations and translational notes. "
             f"Disease context: '{ref_orth.get('disease', 'not specified')}'. "
-            f"For precise scoring, add pharmacological_evidence entries to pathways.json."
+            f"Add 'pharmacological_evidence' entries for {compare} to pathways.json to enable ground-truth scoring."
         )
-        return DimensionScore(raw=score, rationale=rationale, dimension="D5")
+        return DimensionScore(raw=score, rationale=rationale,
+                              dimension="D5", scored_by="inferred")
 
     # ── Composite + risk level ─────────────────────────────
 
@@ -549,7 +644,7 @@ class TranslationalRiskScorer:
             ref_species            = ref,
             model_species          = compare,
             assessed_date          = date.today().isoformat(),
-            evidence_tier          = "inferred",
+            evidence_tier          = _compute_evidence_tier(d1, d2, d3, d4, d5),
             D1=d1, D2=d2, D3=d3, D4=d4, D5=d5,
             composite_raw          = round(composite_raw, 4),
             composite_modified     = round(composite_modified, 4),
@@ -588,6 +683,13 @@ class RiskReportWriter:
                 "D3_regulatory_context":    a.D3.raw,
                 "D4_phenotypic_validity":   a.D4.raw,
                 "D5_therapeutic_evidence":  a.D5.raw,
+            },
+            "dimension_scored_by": {
+                "D1": a.D1.scored_by,
+                "D2": a.D2.scored_by,
+                "D3": a.D3.scored_by,
+                "D4": a.D4.scored_by,
+                "D5": a.D5.scored_by,
             },
             "dimension_rationales": {
                 "D1": a.D1.rationale,

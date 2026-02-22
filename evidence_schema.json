@@ -1,0 +1,203 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://whogivesafly.org/schemas/evidence_schema.json",
+  "title": "Who Gives a Fly — Structured Evidence Schema",
+  "description": "Validates the three ground-truth evidence blocks that upgrade D3, D4, and D5 from inferred to validated scoring. Add these blocks to component entries in pathways.json.",
+  "version": "1.0.0",
+
+  "definitions": {
+
+    "species_id": {
+      "type": "string",
+      "enum": ["human", "mouse", "drosophila", "zebrafish", "worm"],
+      "description": "Species identifier matching pathways.json metadata.species keys."
+    },
+
+    "evidence_tier": {
+      "type": "string",
+      "enum": ["validated", "inferred", "ai_candidate", "disputed"],
+      "description": "Quality tier. Only 'validated' (human-reviewed) scores are used in final risk calculation."
+    },
+
+    "pmid": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9]+$",
+      "description": "PubMed ID without prefix. Null if unpublished or preprint."
+    },
+
+    "score_0_to_5": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+
+    "regulatory_context_entry": {
+      "type": "object",
+      "description": "Structured regulatory context for one species pair. Directly scores D3.",
+      "required": [
+        "upstream_inputs_conserved",
+        "downstream_targets_conserved",
+        "ptm_sites_conserved",
+        "tissue_expression_overlap",
+        "known_rewiring",
+        "score",
+        "evidence_tier"
+      ],
+      "properties": {
+        "upstream_inputs_conserved": {
+          "type": "boolean",
+          "description": "Are the activating signals and upstream kinases/ligands conserved between species?"
+        },
+        "downstream_targets_conserved": {
+          "type": "boolean",
+          "description": "Do the same target genes respond downstream in both species?"
+        },
+        "ptm_sites_conserved": {
+          "type": "boolean",
+          "description": "Are key phosphorylation, ubiquitination, and SUMOylation sites present in model organism?"
+        },
+        "tissue_expression_overlap": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Fraction of disease-relevant tissues where expression is equivalent (0 = none, 1 = identical)."
+        },
+        "known_rewiring": {
+          "type": "boolean",
+          "description": "Is there documented evidence of regulatory rewiring between species?"
+        },
+        "score": { "$ref": "#/definitions/score_0_to_5", "description": "D3 score for this species pair (0–5)." },
+        "evidence_tier": { "$ref": "#/definitions/evidence_tier" },
+        "notes": { "type": "string", "description": "Free-text rationale for score." },
+        "pmids": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/pmid" },
+          "description": "Supporting literature."
+        },
+        "curator": { "type": "string", "description": "Name or ORCID of curator who verified this entry." },
+        "curated_date": { "type": "string", "format": "date" }
+      },
+      "additionalProperties": false
+    },
+
+    "phenotypic_evidence_entry": {
+      "type": "object",
+      "description": "One experimental result documenting model organism phenotypic equivalence to human disease. Directly scores D4.",
+      "required": [
+        "model_species",
+        "evidence_type",
+        "score",
+        "description",
+        "supports_validity",
+        "evidence_tier"
+      ],
+      "properties": {
+        "model_species": { "$ref": "#/definitions/species_id" },
+        "evidence_type": {
+          "type": "string",
+          "enum": ["knockout", "knockin", "overexpression", "rescue", "drug_response", "patient_variant", "rnai", "crispr", "transgenic", "natural_mutant"],
+          "description": "Type of experimental manipulation."
+        },
+        "pmid": { "$ref": "#/definitions/pmid" },
+        "score": { "$ref": "#/definitions/score_0_to_5", "description": "D4 contribution score for this evidence (0–5)." },
+        "description": {
+          "type": "string",
+          "description": "Plain-language description of the experimental result and its relevance."
+        },
+        "supports_validity": {
+          "type": "boolean",
+          "description": "True if this evidence supports translational equivalence; false if it contradicts it."
+        },
+        "caveats": {
+          "type": "string",
+          "description": "Known limitations of this evidence (e.g. different tumour spectrum, developmental vs adult)."
+        },
+        "phenotype_match": {
+          "type": "string",
+          "enum": ["equivalent", "partial", "different", "opposite"],
+          "description": "Degree of phenotypic match between model and human disease."
+        },
+        "evidence_tier": { "$ref": "#/definitions/evidence_tier" },
+        "curator": { "type": "string" },
+        "curated_date": { "type": "string", "format": "date" }
+      },
+      "additionalProperties": false
+    },
+
+    "pharmacological_evidence_entry": {
+      "type": "object",
+      "description": "One drug-response data point in a model organism. Directly scores D5.",
+      "required": [
+        "drug",
+        "target",
+        "model_species",
+        "evidence_type",
+        "concordance",
+        "score",
+        "evidence_tier"
+      ],
+      "properties": {
+        "drug": { "type": "string", "description": "Drug name (generic/INN)." },
+        "chembl_id": { "type": ["string", "null"], "description": "ChEMBL compound ID e.g. CHEMBL231779." },
+        "target": { "type": "string", "description": "Molecular target (gene symbol)." },
+        "model_species": { "$ref": "#/definitions/species_id" },
+        "evidence_type": {
+          "type": "string",
+          "enum": ["in_vitro", "in_vivo", "ex_vivo", "clinical_trial", "approved_use", "drug_screen"],
+          "description": "Experimental context."
+        },
+        "pmid": { "$ref": "#/definitions/pmid" },
+        "concordance": {
+          "type": ["boolean", "null"],
+          "description": "True = model response predicts human response. False = discordant. Null = unknown/untested."
+        },
+        "score": { "$ref": "#/definitions/score_0_to_5", "description": "D5 contribution score (0–5)." },
+        "notes": { "type": "string" },
+        "clinical_stage": {
+          "type": ["string", "null"],
+          "enum": ["approved", "phase_3", "phase_2", "phase_1", "preclinical", null],
+          "description": "Highest clinical development stage for this drug-target pair."
+        },
+        "evidence_tier": { "$ref": "#/definitions/evidence_tier" },
+        "curator": { "type": "string" },
+        "curated_date": { "type": "string", "format": "date" }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "type": "object",
+  "description": "Top-level wrapper validating a single pathway component's evidence blocks.",
+  "properties": {
+
+    "component_id": {
+      "type": "string",
+      "description": "Must match an existing component id in pathways.json."
+    },
+
+    "regulatory_context": {
+      "type": "object",
+      "description": "Keyed by species pair string e.g. 'human_drosophila'. Scores D3.",
+      "patternProperties": {
+        "^(human|mouse|drosophila|zebrafish|worm)_(human|mouse|drosophila|zebrafish|worm)$": {
+          "$ref": "#/definitions/regulatory_context_entry"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "phenotypic_evidence": {
+      "type": "array",
+      "description": "Array of experimental evidence entries. Scores D4.",
+      "items": { "$ref": "#/definitions/phenotypic_evidence_entry" },
+      "minItems": 1
+    },
+
+    "pharmacological_evidence": {
+      "type": "array",
+      "description": "Array of drug-response evidence entries. Scores D5.",
+      "items": { "$ref": "#/definitions/pharmacological_evidence_entry" },
+      "minItems": 1
+    }
+  }
+}
