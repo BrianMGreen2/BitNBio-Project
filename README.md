@@ -690,6 +690,220 @@ For a project at early stage, the most productive order of operations is:
 
 ---
 
+---
+
+## Enrichment Tools
+
+The previous section described the architecture for upgrading inferred scores to ground-truth. These tools implement it. Together they form a complete curation and enrichment pipeline that sits between the literature and the scoring engine.
+
+```
+Literature / APIs
+      │
+      ├─── data_enricher.py ──────→ data/enriched/           (D1, D2, D3 from APIs)
+      │
+      └─── curator + RAG ─────────→ evidence draft .json      (D3, D4, D5 from literature)
+                                           │
+                                    validate_evidence.py
+                                           │
+                              ┌────────────┴────────────┐
+                              ▼                         ▼
+                        schema check              coverage report
+                              │
+                         --approve
+                              │
+                              ▼
+                        pathways.json  ←── evidence_schema.json (enforces structure)
+                              │
+                        risk_scorer.py
+                              │
+                    ground-truth scores
+                    evidence_tier: "validated"
+```
+
+---
+
+### `config/evidence_schema.json`
+
+The three structured evidence blocks (`regulatory_context`, `phenotypic_evidence`, `pharmacological_evidence`) are now formally defined in a JSON Schema. This is the single source of truth for what a valid evidence entry must look like. Every field has a type, every enum has a fixed set of allowed values, and required fields are enforced.
+
+The schema defines three evidence types:
+
+**`regulatory_context`** — keyed by species pair (e.g. `"human_drosophila"`). Each entry answers four sub-questions that map directly to the D3 sub-dimensions: are upstream inputs conserved, are downstream targets conserved, are PTM sites present, and what is the tissue expression overlap (0–1 float). A `score` field (0–5) is set by the curator and used directly by the scorer.
+
+**`phenotypic_evidence`** — an array of experimental results. Each entry records the model species, evidence type (`knockout`, `rescue`, `drug_response`, etc.), a PMID, a plain-language description, and whether the result `supports_validity` (true/false). The scorer takes the maximum score across supporting entries and penalises contradicting ones.
+
+**`pharmacological_evidence`** — an array of drug-response records. Each entry records the drug, its ChEMBL ID, the model species, the clinical stage, a `concordance` boolean (true/false/null), and a PMID. Discordant entries with no concordant counterparts trigger override rule OR-03, elevating risk to High regardless of composite score.
+
+All entries carry an `evidence_tier` field: `"validated"` (human-reviewed), `"enriched"` (API-sourced, not literature-derived), `"ai_candidate"` (RAG-extracted, pending curator review), or `"disputed"`. Only `"validated"` and `"enriched"` entries are used in scoring — `"ai_candidate"` entries are stored but ignored until approved.
+
+Adding Ensembl and Gencode IDs to human ortholog entries in `pathways.json` is the prerequisite for API enrichment of D1 and D2:
+
+```jsonc
+// Add to the human ortholog entry in pathways.json
+"human": {
+  "symbol":     "RB1",
+  "ensembl_id": "ENSG00000139687",    // ← enables D1/D2 Ensembl enrichment
+  "gencode_id": "ENSG00000139687.14", // ← enables D3 GTEx expression enrichment
+  "disease":    "Retinoblastoma, osteosarcoma"
+}
+```
+
+---
+
+### `validate_evidence.py`
+
+The curation CLI. Handles the full lifecycle of an evidence entry from blank template to committed, validated data in `pathways.json`.
+
+```bash
+# See which components have no structured evidence (start here)
+python validate_evidence.py --report
+
+# Generate a blank template for a component
+python validate_evidence.py --template rb1 --pathway rb_pathway \
+  --species drosophila mouse --output rb1_evidence.json
+
+# Validate a filled-in draft against evidence_schema.json
+python validate_evidence.py --entry rb1_evidence.json --component rb1
+
+# Approve and merge into pathways.json (upgrades ai_candidate → validated)
+python validate_evidence.py --approve rb1_evidence.json \
+  --component rb1 --curator "J.Smith"
+
+# Validate all existing evidence blocks in pathways.json
+python validate_evidence.py --check
+```
+
+The `--report` command is the primary tool for understanding where the system stands. Running it now against the current `pathways.json` shows:
+
+```
+Total components:     10
+Fully validated:       0 (0%)
+Partially validated:   0 (0%)
+All inferred:         10 (100%)
+
+Per-dimension coverage:
+  D3 Regulatory context   ░░░░░░░░░░    0%
+  D4 Phenotypic validity  ░░░░░░░░░░    0%
+  D5 Therapeutic evidence ░░░░░░░░░░    0%
+
+Priority gaps:
+  [CRITICAL] rb_pathway/ink4_family → D4 (phenotypic_evidence)
+  [CRITICAL] rb_pathway/arf_p53     → D4 (phenotypic_evidence)
+  [HIGH    ] rb_pathway/ink4_family → D5 (pharmacological_evidence)
+  [HIGH    ] rb_pathway/arf_p53     → D5 (pharmacological_evidence)
+```
+
+Gap priority is computed from translational risk × dimension weight: high-risk components with unevidenced D4 scores are flagged Critical because these are the decisions with the most clinical consequence on the least reliable data. The report re-runs in seconds and should be checked after every curation session.
+
+The `--approve` command does three things automatically: validates the draft against the schema, upgrades any `"ai_candidate"` entries to `"validated"`, stamps the curator name and date on each entry, and merges the result into `pathways.json`. It refuses to merge if validation fails.
+
+---
+
+### `data_enricher.py`
+
+Automates the API-sourced portion of enrichment. Queries Ensembl (homologs and paralogs), UniProt (sequence data), ChEMBL (approved drug targets and activity records), and GTEx (tissue-specific expression) for each pathway component. Results are written to `data/enriched/` — never directly to `pathways.json` — so API data and curator data are always kept separate.
+
+```bash
+# Check which APIs are currently reachable
+python data_enricher.py --check-apis
+
+# Show enrichment status for all components
+python data_enricher.py --status
+
+# Preview what would be fetched without calling any APIs
+python data_enricher.py --pathway rb_pathway --component rb1 --dry-run
+
+# Run enrichment for one pathway
+python data_enricher.py --pathway rb_pathway
+
+# Run for all pathways, skipping already-enriched components
+python data_enricher.py --pathway all --skip-existing
+```
+
+Set `ENRICHER_CACHE=1` to cache API responses locally in `data/cache/` — useful for development or working offline after an initial fetch.
+
+The `--dry-run` flag reports exactly what would be fetched and flags missing prerequisites before touching any API:
+
+```
+── rb1 (human: RB1) ──
+  SKIP D1/D2: no 'ensembl_id' in human ortholog entry for rb1
+  → Add 'ensembl_id': 'ENSGXXX...' to pathways.json to enable
+  SKIP D3 expression: no gencode_id
+  [DRY RUN] Would fetch ChEMBL for RB1
+```
+
+D5 enrichment (ChEMBL) runs on gene symbol alone and needs no additional IDs. D1, D2, and D3 enrichment requires `ensembl_id` and `gencode_id` to be present in the human ortholog entry — the dry-run output tells you exactly which components are blocked and why.
+
+Enrichment records carry their own `evidence_tier: "enriched"` field. The scoring engine treats `"enriched"` as ground truth for D1 and D2, and as a scored-but-unreviewed source for D3–D5 (which still benefit from but are not solely determined by API data). Recommended cadence: run quarterly or on a GitHub Action trigger when a new component is added to `pathways.json`.
+
+---
+
+### Updates to `risk_scorer.py`
+
+The scoring engine was updated to actually use structured evidence when present. Three changes were made.
+
+**Ground-truth scoring paths in D3, D4, and D5.** Each method now checks for its corresponding evidence block first. If a `validated` or `enriched` entry exists for the species pair being assessed, the structured score is used directly and the rationale records where it came from. The inference path only activates when no structured data is present. The distinction is visible in every output — rationale strings now open with `[VALIDATED]`, `[ENRICHED]`, or `[INFERRED]` as the first word.
+
+**`scored_by` field on every dimension.** Each `DimensionScore` now carries a `scored_by` attribute (`"ground_truth"`, `"enriched"`, or `"inferred"`) which appears in the JSON output under `dimension_scored_by`. This lets downstream tools filter or weight dimensions by their evidence quality without parsing rationale strings.
+
+**Dynamic `evidence_tier` on the assessment record.** The record-level `evidence_tier` was hardcoded to `"inferred"` in the original implementation regardless of what data was present. It is now computed from the `scored_by` values of D3, D4, and D5: `"validated"` if all three are ground-truth scored, `"inferred"` if all three are estimated, and `"partial"` for any mix. D1 and D2 are excluded from this calculation because sequence conservation and paralog counts are less likely to change a final risk level even when inferred.
+
+A fully enriched assessment record now looks like:
+
+```json
+{
+  "assessment_id":   "rb_pathway__cdk4_6__mouse",
+  "evidence_tier":   "validated",
+  "dimension_scores": {
+    "D1_sequence_conservation": 5,
+    "D2_paralog_complexity":    5,
+    "D3_regulatory_context":    4,
+    "D4_phenotypic_validity":   4,
+    "D5_therapeutic_evidence":  4
+  },
+  "dimension_scored_by": {
+    "D1": "enriched",
+    "D2": "enriched",
+    "D3": "validated",
+    "D4": "validated",
+    "D5": "validated"
+  },
+  "final_risk": "low",
+  "composite_score_modified": 0.84
+}
+```
+
+Compared to the previous output where `evidence_tier` was always `"inferred"` and `dimension_scored_by` did not exist, this record is fully traceable: every score has a source, every source has a tier, and the record-level tier summarises the whole.
+
+---
+
+### Updated repository structure
+
+```
+who-gives-a-fly/
+├── pipeline.py
+├── risk_scorer.py          ← updated: reads structured evidence, dynamic evidence_tier
+├── validate_evidence.py    ← new: curation CLI and schema validator
+├── data_enricher.py        ← new: API enrichment (Ensembl, ChEMBL, GTEx)
+│
+├── config/
+│   ├── pathways.json
+│   ├── settings.json
+│   ├── translational_risk_rubric_data.json
+│   ├── translational_risk_rubric.json
+│   └── evidence_schema.json     ← new: JSON Schema for evidence blocks
+│
+├── data/
+│   ├── enriched/                ← new: API enrichment outputs (never edit directly)
+│   │   └── {pathway}__{component}__enriched.json
+│   └── cache/                   ← new: local API response cache (ENRICHER_CACHE=1)
+│
+└── output/
+    └── {pathway}__risk__{species}.json   ← now includes dimension_scored_by
+```
+
+---
+
 ## Extending the Pipeline
 
 **Adding a new pathway** — add a new entry to `config/pathways.json` following the existing structure. The pipeline picks it up automatically with `--pathway all`.
