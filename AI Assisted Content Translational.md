@@ -1,7 +1,8 @@
 # AI-Assisted Content for Multidisciplinary Translational Teams
 
 > *Why bridging the preclinical-to-clinical gap requires custom-synthesised content, not just better data — and what makes AI assistance trustworthy enough to use in that context.*
-
+>
+> READ THIS FIRST: [CONTEXT_ENGINEERING.md](CONTEXT_ENGINEERING.md) for a discussion on how to design architecture correctly for a domain where the knowledge base is always incomplete and always growing.
 ---
 
 ## The content problem that precedes the biology problem
