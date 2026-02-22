@@ -536,45 +536,247 @@ def generate_entry_template(component_id: str, pathway_id: str,
 # CLI
 # ─────────────────────────────────────────────────────────
 
+
+from dataclasses import dataclass as _dataclass_import
+
+
+@_dataclass_import
+class ReviewWarning:
+    code:     str
+    severity: str   # "error" | "warning" | "info"
+    message:  str
+    field:    str
+    entry_index: int = -1
+
+
+def review_phenotypic_evidence(entries, component_id):
+    warnings = []
+    supporting    = [e for e in entries if e.get("supports_validity", True)]
+    contradicting = [e for e in entries if not e.get("supports_validity", True)]
+
+    for i, entry in enumerate(entries):
+        score       = entry.get("score", 0)
+        pmid        = entry.get("pmid")
+        ev_type     = entry.get("evidence_type", "")
+        pheno_match = entry.get("phenotype_match")
+        caveats     = entry.get("caveats", "")
+        description = entry.get("description", "")
+        supports    = entry.get("supports_validity", True)
+
+        if score >= 4 and not pmid:
+            warnings.append(ReviewWarning("W-S01", "error",
+                f"Score {score} requires at least one PMID. Add a PMID or reduce score to ≤3.",
+                "pmid", i))
+
+        if score == 5 and supports:
+            rescue_entries = [e for e in entries if e.get("evidence_type") == "rescue"
+                              and e.get("supports_validity", True)]
+            if not rescue_entries:
+                warnings.append(ReviewWarning("W-S02", "warning",
+                    "Score 5 without a rescue entry. D4=5 requires human gene rescue "
+                    "(evidence_type=\'rescue\'). Add rescue entry or reduce to 4.",
+                    "evidence_type", i))
+
+        if score >= 4 and ev_type == "in_vitro":
+            warnings.append(ReviewWarning("W-S03", "error",
+                f"Score {score} with evidence_type=\'in_vitro\'. In vitro caps D4 at 3.",
+                "evidence_type", i))
+
+        if score == 5 and supports:
+            pmids_in_block = [e.get("pmid") for e in entries if e.get("pmid")]
+            if len(set(pmids_in_block)) < 2:
+                warnings.append(ReviewWarning("W-S04", "warning",
+                    f"Score 5 requires ≥2 independent studies. "
+                    f"Only {len(set(pmids_in_block))} unique PMID(s) found. Add second source or reduce to 4.",
+                    "pmid", i))
+
+        if score <= 3 and supports and not caveats.strip():
+            warnings.append(ReviewWarning("W-N01", "warning",
+                f"Score {score} with empty caveats. Low-to-moderate scores typically reflect "
+                f"known limitations — document them.",
+                "caveats", i))
+
+        if pheno_match == "different" and supports:
+            warnings.append(ReviewWarning("W-N02", "warning",
+                "phenotype_match=\'different\' with supports_validity=True is unusual. Verify.",
+                "phenotype_match", i))
+
+        if len(description.strip()) < 30:
+            warnings.append(ReviewWarning("W-N03", "warning",
+                f"Description too brief ({len(description.strip())} chars). "
+                f"Include organism, manipulation, phenotype, relevance to human disease.",
+                "description", i))
+
+    if len(contradicting) > len(supporting) and supporting:
+        warnings.append(ReviewWarning("W-C01", "error",
+            f"Contradicting entries ({len(contradicting)}) outnumber supporting ({len(supporting)}). "
+            f"Composite D4 score should not exceed 2.",
+            "supports_validity"))
+
+    if contradicting and supporting:
+        max_sup = max((e.get("score", 0) for e in supporting), default=0)
+        unexplained = [e for e in contradicting
+                       if len((e.get("notes","") or e.get("description","")).strip()) < 20]
+        if max_sup >= 3 and unexplained:
+            warnings.append(ReviewWarning("W-C02", "warning",
+                "Contradiction present alongside score ≥3 but contradicting entry lacks explanation.",
+                "notes"))
+
+    return warnings
+
+
+def review_pharmacological_evidence(entries, component_id):
+    warnings = []
+    concordant  = [e for e in entries if e.get("concordance") is True]
+    discordant  = [e for e in entries if e.get("concordance") is False]
+
+    for i, entry in enumerate(entries):
+        score      = entry.get("score", 0)
+        pmid       = entry.get("pmid")
+        ev_type    = entry.get("evidence_type", "")
+        concordance = entry.get("concordance")
+
+        if score >= 4 and concordance is not True:
+            warnings.append(ReviewWarning("W-S05", "error",
+                f"Score {score} requires concordance=true. Current: {concordance!r}. "
+                f"Reduce to ≤3 or confirm concordance.",
+                "concordance", i))
+
+        if score >= 4 and ev_type == "in_vitro":
+            warnings.append(ReviewWarning("W-S06", "error",
+                f"Score {score} with evidence_type=\'in_vitro\'. In vitro caps D5 at 2.",
+                "evidence_type", i))
+
+        if concordance is True and not pmid:
+            warnings.append(ReviewWarning("W-S07", "error",
+                "concordance=true requires a PMID to verify. Add PMID or change to null.",
+                "pmid", i))
+
+        if ev_type == "drug_screen" and score >= 3:
+            warnings.append(ReviewWarning("W-S08", "error",
+                "evidence_type=\'drug_screen\' caps D5 at 2 until mechanistic validation.",
+                "evidence_type", i))
+
+    if discordant and concordant:
+        for i, entry in enumerate(discordant):
+            if len(entry.get("notes", "").strip()) < 20:
+                warnings.append(ReviewWarning("W-C02", "warning",
+                    "Discordant entry lacks explanation. Document mechanism of discordance.",
+                    "notes", i))
+
+    return warnings
+
+
+def review_regulatory_context(entries, component_id):
+    warnings = []
+    for pair_key, entry in entries.items():
+        score    = entry.get("score", 0)
+        rewiring = entry.get("known_rewiring", False)
+        notes    = entry.get("notes", "")
+        tex      = entry.get("tissue_expression_overlap")
+        pmids    = entry.get("pmids", [])
+
+        if rewiring and len(notes.strip()) < 20:
+            warnings.append(ReviewWarning("W-C03", "warning",
+                f"[{pair_key}] known_rewiring=true but notes is empty. Describe the rewiring event.",
+                "notes"))
+
+        if rewiring and tex is not None and tex >= 0.80:
+            warnings.append(ReviewWarning("W-C04", "info",
+                f"[{pair_key}] tissue_expression_overlap={tex} (high) with known_rewiring=true. "
+                f"Valid but uncommon — confirm intentional.",
+                "tissue_expression_overlap"))
+
+        if score >= 4 and not [p for p in pmids if p]:
+            warnings.append(ReviewWarning("W-S01", "warning",
+                f"[{pair_key}] D3 score {score} without PMIDs. Add supporting references.",
+                "pmids"))
+
+    return warnings
+
+
+def run_scientific_review(entry, component_id, override_warnings=False):
+    all_warnings = []
+    pheno = entry.get("phenotypic_evidence", [])
+    pharm = entry.get("pharmacological_evidence", [])
+    reg   = entry.get("regulatory_context", {})
+    if pheno: all_warnings.extend(review_phenotypic_evidence(pheno, component_id))
+    if pharm: all_warnings.extend(review_pharmacological_evidence(pharm, component_id))
+    if reg:   all_warnings.extend(review_regulatory_context(reg, component_id))
+    errors = [w for w in all_warnings if w.severity == "error"]
+    can_approve = (not errors) or override_warnings
+    return can_approve, all_warnings
+
+
+def print_review_results(warnings, component_id):
+    errors = [w for w in warnings if w.severity == "error"]
+    warns  = [w for w in warnings if w.severity == "warning"]
+    infos  = [w for w in warnings if w.severity == "info"]
+
+    print(f"\n═══ SCIENTIFIC REVIEW: {component_id} ═══\n")
+
+    if not warnings:
+        print("  ✅ No warnings. All entries pass scientific consistency checks.\n")
+        return
+
+    if errors:
+        print(f"  ✗ ERRORS ({len(errors)}) — must be resolved before --approve:\n")
+        for w in errors:
+            loc = f"[entry {w.entry_index}]" if w.entry_index >= 0 else "[block]"
+            print(f"    [{w.code}] {loc} {w.field}")
+            print(f"           {w.message}\n")
+
+    if warns:
+        print(f"  ⚠ WARNINGS ({len(warns)}) — address or use --override-warnings:\n")
+        for w in warns:
+            loc = f"[entry {w.entry_index}]" if w.entry_index >= 0 else "[block]"
+            print(f"    [{w.code}] {loc} {w.field}")
+            print(f"           {w.message}\n")
+
+    if infos:
+        print(f"  ℹ INFO ({len(infos)}):\n")
+        for w in infos:
+            print(f"    [{w.code}] {w.field} — {w.message}\n")
+
+    if errors:
+        print(f"  Fix {len(errors)} error(s) before approval.\n")
+    elif warns:
+        print(f"  {len(warns)} warning(s). Use --override-warnings if addressed manually.\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Who Gives a Fly — Evidence Validator & Curation Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Check all evidence blocks in pathways.json
   python validate_evidence.py --check
-
-  # Show which components have no structured evidence (coverage report)
   python validate_evidence.py --report
-
-  # Generate a blank template for a component
   python validate_evidence.py --template rb1 --pathway rb_pathway --species drosophila mouse
-
-  # Validate a filled-in evidence draft
   python validate_evidence.py --entry my_evidence_draft.json --component rb1
-
-  # Approve and merge into pathways.json
+  python validate_evidence.py --review my_evidence_draft.json --component rb1
   python validate_evidence.py --approve my_evidence_draft.json --component rb1 --curator "J.Smith"
+  python validate_evidence.py --approve my_evidence_draft.json --component rb1 --curator "J.Smith" --override-warnings
         """
     )
-
-    parser.add_argument("--check",      action="store_true", help="Validate all evidence blocks in pathways.json")
-    parser.add_argument("--report",     action="store_true", help="Show evidence coverage report")
-    parser.add_argument("--entry",      type=str,            help="Path to a standalone evidence draft JSON to validate")
-    parser.add_argument("--approve",    type=str,            help="Path to a validated draft to merge into pathways.json")
-    parser.add_argument("--template",   type=str,            help="Component ID to generate a blank template for")
-    parser.add_argument("--component",  type=str,            help="Component ID (required with --entry, --approve)")
-    parser.add_argument("--pathway",    type=str,            default="rb_pathway", help="Pathway ID (for --template)")
-    parser.add_argument("--species",    nargs="+",           default=["drosophila","mouse","zebrafish","worm"])
-    parser.add_argument("--curator",    type=str,            default="", help="Curator name or ORCID (required with --approve)")
-    parser.add_argument("--output",     type=str,            default="evidence_template.json", help="Output path for --template")
-    parser.add_argument("--pathways",   type=str,            default="config/pathways.json")
-    parser.add_argument("--schema",     type=str,            default="config/evidence_schema.json")
-
+    parser.add_argument("--check",             action="store_true")
+    parser.add_argument("--report",            action="store_true")
+    parser.add_argument("--entry",             type=str)
+    parser.add_argument("--review",            type=str,  help="Run scientific consistency checks")
+    parser.add_argument("--approve",           type=str)
+    parser.add_argument("--template",          type=str)
+    parser.add_argument("--component",         type=str)
+    parser.add_argument("--pathway",           type=str,  default="rb_pathway")
+    parser.add_argument("--species",           nargs="+", default=["drosophila","mouse","zebrafish","worm"])
+    parser.add_argument("--curator",           type=str,  default="")
+    parser.add_argument("--output",            type=str,  default="evidence_template.json")
+    parser.add_argument("--override-warnings", action="store_true",
+                        help="Approve despite warnings (errors still block)")
+    parser.add_argument("--pathways",          type=str,  default="config/pathways.json")
+    parser.add_argument("--schema",            type=str,  default="config/evidence_schema.json")
     args = parser.parse_args()
 
-    if not any([args.check, args.report, args.entry, args.approve, args.template]):
+    if not any([args.check, args.report, args.entry, args.review, args.approve, args.template]):
         parser.print_help()
         return
 
@@ -592,18 +794,35 @@ Examples:
 
     if args.entry:
         if not args.component:
-            print("ERROR: --entry requires --component")
-            sys.exit(1)
+            print("ERROR: --entry requires --component"); sys.exit(1)
         ok = validate_entry_file(args.entry, args.component, args.schema)
         sys.exit(0 if ok else 1)
 
+    if args.review:
+        if not args.component:
+            print("ERROR: --review requires --component"); sys.exit(1)
+        schema_ok = validate_entry_file(args.review, args.component, args.schema)
+        if not schema_ok:
+            print("  Schema validation failed — fix before scientific review."); sys.exit(1)
+        with open(args.review) as f:
+            entry = json.load(f)
+        can_approve, review_warnings = run_scientific_review(entry, args.component)
+        print_review_results(review_warnings, args.component)
+        sys.exit(0 if can_approve else 1)
+
     if args.approve:
         if not args.component:
-            print("ERROR: --approve requires --component")
-            sys.exit(1)
+            print("ERROR: --approve requires --component"); sys.exit(1)
         if not args.curator:
-            print("ERROR: --approve requires --curator")
-            sys.exit(1)
+            print("ERROR: --approve requires --curator"); sys.exit(1)
+        with open(args.approve) as f:
+            entry = json.load(f)
+        can_approve, review_warnings = run_scientific_review(
+            entry, args.component, override_warnings=args.override_warnings
+        )
+        print_review_results(review_warnings, args.component)
+        if not can_approve:
+            print("  Approval blocked by errors. Fix and retry."); sys.exit(1)
         ok = approve_entry(args.approve, args.pathways, args.component, args.curator, args.schema)
         sys.exit(0 if ok else 1)
 
